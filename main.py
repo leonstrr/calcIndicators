@@ -143,6 +143,90 @@ def filter_elements_by_properties(elements, pset_name, property_name, expected_v
                     filtered.append(element)
     return filtered
     pass
+def perform_clash_detection(model, lrp_element):
+    # --- Vorbereitung Clash testing --- #
+    # Alle IfcBuiltElemente abrufen, um das erstellte Lichtraumprofil einzuschließen
+    all_built_elements = model.by_type("IfcBuiltElement")
+
+    # -- Gruppe A -- #
+    # Lichtraumprofil ist bereits bekannt (lrp_element)
+    group_a_elements = [lrp_element]
+
+    # -- Gruppe B -- #
+    # Anwendung der Filterfunktion für Load Bearing
+    load_bearing_elements = filter_elements_by_properties(
+        all_built_elements,
+        pset_name="Pset_BeamCommon",
+        property_name="LoadBearing",
+        expected_value=True
+    )
+    print(f"Anzahl der gefundenen Elemente: {len(load_bearing_elements)}")
+    for el in load_bearing_elements:
+        print(f"Element ID: {el.GlobalId}, Name: {el.Name}")
+
+    group_b_elements = load_bearing_elements
+
+    # -- Clash Detection -- #
+    # Geometrie Setup
+    tree = ifcopenshell.geom.tree()
+    settings = ifcopenshell.geom.settings()
+    settings.set(settings.USE_WORLD_COORDS, True)  # Sicherstellen, dass Weltkoordinaten verwendet werden
+    iterator = ifcopenshell.geom.iterator(settings, model, multiprocessing.cpu_count())
+
+    if iterator.initialize():
+        while True:
+            element = iterator.get()
+            tree.add_element(element)
+            if not iterator.next():
+                break
+
+    # Clash Detection durchführen
+    clashes = tree.clash_intersection_many(
+        group_a_elements,  # Lichtraumprofil
+        group_b_elements,  # Elemente, die gefiltert wurden (hier: LoadBearing)
+        tolerance=0.002,    # Toleranz von 2 mm
+        check_all=True      # Alle möglichen Kollisionen überprüfen
+    )
+
+    # -- Post Processing -- #
+    # Liste der clashing Elemente GUIDs sammeln
+    list_of_clashing_elements_guid = []
+    for clash in clashes:
+        element2 = clash.b
+        list_of_clashing_elements_guid.append(element2.get_argument(0))
+
+    # Clashing Elemente färben (rot, undurchsichtig)
+    for guid in list_of_clashing_elements_guid:
+        try:
+            element = model.by_guid(guid)
+            representation_item = element.Representation.Representations[1].Items[0]
+            create_colour_assignment(
+                model,
+                element,
+                representation_item,
+                color_rgb=(162, 34, 35),  # KIT-Rot
+                transparency=0.0          # Undurchsichtig
+            )
+        except Exception as e:
+            print(f"Fehler beim Färben des Elements mit GUID {guid}: {e}")
+
+    # Lichtraumprofil färben (grün, leicht transparent)
+    try:
+        lrp_representation_items = lrp_element.Representation.Representations[0].Items
+        for item in lrp_representation_items:
+            create_colour_assignment(
+                model,
+                lrp_element,
+                item,
+                color_rgb=(0, 150, 130),  # KIT-Grün
+                transparency=0.1          # Leicht transparent
+            )
+        print("Lichtraumprofil wurde erfolgreich gefärbt.")
+    except Exception as e:
+        print(f"Fehler beim Färben des Lichtraumprofils: {e}")
+
+    return model  # Geändertes Modell zurückgeben
+    pass
 def create_colour_assignment(model, element, representation_item, color_rgb, transparency=0.0):
     """
     Weist einem Element eine bestimmte Farbe und Transparenz zu.
@@ -193,29 +277,19 @@ def create_colour_assignment(model, element, representation_item, color_rgb, tra
 
     return styled_item
     pass
-def print_element_psets(elements, max_elements=5):
-    """
-    Gibt die verfügbaren Property Sets und deren Eigenschaften für die ersten `max_elements` Elemente aus.
-
-    :param elements: Liste der Elemente
-    :param max_elements: Maximale Anzahl der Elemente, die ausgegeben werden
-    """
-    for el in elements[:max_elements]:
-        psets = get_psets(el)
-        print(f"Element ID: {el.GlobalId}, Name: {el.Name}")
-        for pset_name, properties in psets.items():
-            print(f"  Property Set: {pset_name}")
-            for prop, value in properties.items():
-                print(f"    {prop}: {value}")
-        print("\n")
-    pass
+def save_ifc_file(model, output_ifc_file):
+    model.write(output_ifc_file)
+    print(f"IFC-Datei wurde erfolgreich geschrieben: {output_ifc_file}")
 
 if __name__ == "__main__":
     # Abmessungen des gewünschten Lichtraumprofils
     lrp_data = [(-14.5, 0.0), (14.5, 0.0), (14.5, 7.5), (-14.5, 7.5)]
 
     # IFC-Dateipfad
-    ifc_file_path = 'C:/Users/leons/iCloudDrive/Masterarbeit/IFC-Files/selbst erstellte files/bruecke mit trasse/selbst erstellte bruecke mit trasse 24-10-06.ifc'
+    ifc_file_path = 'C:/Pfad/zu/deiner/Input.ifc'
+
+    # Output-Dateipfad
+    output_ifc_file = 'C:/Pfad/zu/deiner/Output.ifc'
 
     # Checken, ob Datei existiert
     if not os.path.exists(ifc_file_path):
@@ -224,17 +298,6 @@ if __name__ == "__main__":
     # IFC-Datei laden
     model = ifcopenshell.open(ifc_file_path)
 
-    # Alle Alignments finden
-    alignment_elements = model.by_type("IfcAlignment")
-    print(f"Anzahl der IfcAlignment Elemente: {len(alignment_elements)}")
-
-    # Alignment finden
-    try:
-        alignment_element = process_elements(alignment_elements, name_filter="Alignment")
-    except ValueError as e:
-        print(e)
-        sys.exit(1)
-
     # Lichtraumprofil erstellen
     try:
         lrp_element = create_lrp_profile(model, lrp_data)
@@ -242,96 +305,11 @@ if __name__ == "__main__":
         print(f"Fehler beim Erstellen des Lichtraumprofils: {e}")
         sys.exit(1)
 
-    # --- Vorbereitung Clash testing --- #
-    # Alle IfcBuiltElemente abrufen, um das erstellte Lichtraumprofil einzuschließen
-    all_built_elements = model.by_type("IfcBuiltElement")
-
-    # -- Gruppe A -- #
-    # Lichtraumprofil finden
-    try:
-        lrp_element = process_elements(all_built_elements, name_filter="Lichtraumprofil")
-    except ValueError as e:
-        print(f"Fehler beim Finden des Lichtraumprofils: {e}")
-        sys.exit(1)
-
-    group_a_elements = [lrp_element]  # In Liste packen, da die Funktion später eine Liste erwartet
-
-    # -- Gruppe B -- #
-    # Anwendung der Filterfunktion für Load Bearing
-    load_bearing_elements = filter_elements_by_properties(
-        all_built_elements,
-        pset_name="Pset_BeamCommon",
-        property_name="LoadBearing",
-        expected_value=True
-    )
-    print(f"Anzahl der geundenen Elemente: {len(load_bearing_elements)}")
-    for el in load_bearing_elements:
-        print(f"Element ID: {el.GlobalId}, Name: {el.Name}")
-
-    group_b_elements = load_bearing_elements
-
-    # -- Clash Detection -- #
-    # Geometrie Setup
-    tree = ifcopenshell.geom.tree()
-    settings = ifcopenshell.geom.settings()
-    settings.set(settings.USE_WORLD_COORDS, True)  # Sicherstellen, dass Weltkoordinaten verwendet werden
-    iterator = ifcopenshell.geom.iterator(settings, model, multiprocessing.cpu_count())
-
-    if iterator.initialize():
-        while True:
-            element = iterator.get()
-            tree.add_element(element)
-            if not iterator.next():
-                break
-
     # Clash Detection durchführen
-    clashes = tree.clash_intersection_many(
-        group_a_elements,  # Lichtraumprofil
-        group_b_elements,  # Elemente, die gefiltert wurden (hier: LoadBearing)
-        tolerance=0.002,    # Toleranz von 2 mm
-        check_all=True      # Alle möglichen Kollisionen überprüfen
-    )
+    model = perform_clash_detection(model, lrp_element)
 
-    # -- Post Processing -- #
-    # Liste der clashing Elemente GUIDs sammeln
-    list_of_clashing_elements_guid = []
-    for clash in clashes:
-        element2 = clash.b
-        list_of_clashing_elements_guid.append(element2.get_argument(0))
+    # IFC-Datei speichern
+    save_ifc_file(model, output_ifc_file)
 
-    # Clashing Elemente färben (rot, undurchsichtig)
-    for guid in list_of_clashing_elements_guid:
-        try:
-            element = model.by_guid(guid)
-            representation_item = element.Representation.Representations[1].Items[0]
-            create_colour_assignment(
-                model,
-                element,
-                representation_item,
-                color_rgb=(162, 34, 35),  # KIT-Rot: (162, 34, 35)
-                transparency=0.0          # Undurchsichtig
-            )
-        except Exception as e:
-            print(f"Fehler beim Färben des Elements mit GUID {guid}: {e}")
-
-    # Lichtraumprofil färben (grün, leicht transparent)
-    try:
-        lrp_representation_items = lrp_element.Representation.Representations[0].Items
-        for item in lrp_representation_items:
-            create_colour_assignment(
-                model,
-                lrp_element,
-                item,
-                color_rgb=(0, 150, 130),  # KIT-Blau: (0, 150, 130)
-                transparency=0.1          # Leicht transparent
-            )
-        print("Lichtraumprofil wurde erfolgreich gefärbt.")
-    except Exception as e:
-        print(f"Fehler beim Färben des Lichtraumprofils: {e}")
-
-    # IFC-Datei schreiben
-    output_ifc_file = 'C:/Users/leons/iCloudDrive/Masterarbeit/IFC-Files/selbst erstellte files/bruecke mit trasse/selbst erstellte bruecke mit trasse lrp und farben 24-10-12.ifc'
-    model.write(output_ifc_file)
-    print(f"IFC-Datei wurde erfolgreich geschrieben: {output_ifc_file}")
 
 
