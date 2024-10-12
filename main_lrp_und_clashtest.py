@@ -330,7 +330,7 @@ if __name__ == "__main__":
         print(f"Fehler beim Färben des Lichtraumprofils: {e}")
 
     # IFC-Datei schreiben
-    output_ifc_file = 'C:/Users/leons/iCloudDrive/Masterarbeit/IFC-Files/selbst erstellte files/bruecke mit trasse/selbst erstellte bruecke mit trasse lrp und farben 24-10-06.ifc'
+    output_ifc_file = 'C:/Users/leons/iCloudDrive/Masterarbeit/IFC-Files/selbst erstellte files/bruecke mit trasse/selbst erstellte bruecke mit trasse lrp und farben 24-10-12.ifc'
     model.write(output_ifc_file)
     print(f"IFC-Datei wurde erfolgreich geschrieben: {output_ifc_file}")
 
