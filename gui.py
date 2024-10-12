@@ -1,9 +1,10 @@
 from main import create_lrp_profile, perform_clash_detection, save_ifc_file, process_elements
 from pathlib import Path
-from tkinter import Tk, Canvas, Entry, Text, Button, filedialog, messagebox
+from tkinter import Tk, Canvas, Text, Button, Frame, filedialog, messagebox, PhotoImage
 import os
 import ifcopenshell
 import sys
+import subprocess
 
 # DPI-Awareness aktivieren
 if sys.platform == "win32":
@@ -17,6 +18,118 @@ if sys.platform == "win32":
 input_ifc_file = None
 output_ifc_file = None
 
+# Pfad zur Blender-Executable
+blender_executable = "C:/Program Files/Blender Foundation/Blender/blender.exe"  # Passe diesen Pfad entsprechend an
+
+# Erstellung des Fensters
+window = Tk()
+
+# Skalierung anpassen
+window.tk.call('tk', 'scaling', 1.0)
+
+# Fenstergröße anpassen
+window.geometry("1200x800")  # Fenstergröße weiter erhöht
+window.configure(bg="#FFFFFF")
+
+# Canvas erstellen
+canvas = Canvas(
+    window,
+    bg="#FFFFFF",
+    height=800,
+    width=1200,
+    bd=0,
+    highlightthickness=0,
+    relief="ridge"
+)
+canvas.place(x=0, y=0)
+
+# Hintergrund-Rechteck
+canvas.create_rectangle(
+    0.0,
+    0.0,
+    1200.0,
+    800.0,
+    fill="#213563",
+    outline=""
+)
+
+# Titeltext
+canvas.create_text(
+    150.0,  # Angepasst für größere Fenster
+    100.0,
+    anchor="nw",
+    text="Lichtraumprofil und Clash Testing",
+    fill="#FFFFFF",
+    font=("Arial", 28, "bold")
+)
+
+# Frames für die Dateiauswahl und Blender-Buttons
+frame_input = Frame(window, bg="#213563")
+frame_input.place(x=150.0, y=200.0, width=900.0, height=48.0)
+
+frame_output = Frame(window, bg="#213563")
+frame_output.place(x=150.0, y=350.0, width=900.0, height=48.0)
+
+# Input IFC-Datei Text
+canvas.create_text(
+    150.0,
+    170.0,
+    anchor="nw",
+    text="Input IFC-Datei:",
+    fill="#FFFFFF",
+    font=("Arial", 20)
+)
+
+# Output IFC-Datei Text
+canvas.create_text(
+    150.0,
+    320.0,
+    anchor="nw",
+    text="Output IFC-Datei:",
+    fill="#FFFFFF",
+    font=("Arial", 20)
+)
+
+# Funktion zum Laden des Blender-Icons
+def load_blender_icon():
+    global blender_icon
+    try:
+        blender_icon = PhotoImage(file=os.path.join("assets", "blender_icon.png"))
+    except Exception as e:
+        messagebox.showerror("Fehler", f"Blender-Icon konnte nicht geladen werden:\n{e}")
+        blender_icon = None  # Fallback, falls das Icon nicht geladen werden kann
+
+# Laden des Blender-Icons nach Erstellung des Root-Fensters
+load_blender_icon()
+
+# Funktion zum Öffnen eines IFC-Modells in Blender
+def open_in_blender(file_path):
+    if not os.path.isfile(blender_executable):
+        messagebox.showerror("Fehler", f"Blender wurde nicht gefunden unter:\n{blender_executable}")
+        return
+    if not os.path.isfile(file_path):
+        messagebox.showerror("Fehler", f"Die Datei wurde nicht gefunden:\n{file_path}")
+        return
+    try:
+        subprocess.Popen([blender_executable, file_path])
+        messagebox.showinfo("Erfolg", f"Blender wurde geöffnet mit:\n{os.path.basename(file_path)}")
+    except Exception as e:
+        messagebox.showerror("Fehler", f"Fehler beim Öffnen von Blender: {e}")
+
+# Funktion zum Öffnen des Input-Modells in Blender
+def on_open_input_in_blender():
+    if not input_ifc_file:
+        messagebox.showwarning("Warnung", "Bitte zuerst eine Input IFC-Datei auswählen.")
+        return
+    open_in_blender(input_ifc_file)
+
+# Funktion zum Öffnen des Output-Modells in Blender
+def on_open_output_in_blender():
+    if not output_ifc_file:
+        messagebox.showwarning("Warnung", "Bitte zuerst eine Output IFC-Datei auswählen.")
+        return
+    open_in_blender(output_ifc_file)
+
 # Funktionen zum Auswählen der Dateien
 def select_input_file():
     global input_ifc_file
@@ -27,7 +140,7 @@ def select_input_file():
     if file_path:
         input_ifc_file = file_path
         # Aktualisiere den Button-Text mit dem Dateinamen
-        button_input_file.config(text=f"Input IFC: {os.path.basename(file_path)}")
+        button_input_file.config(text=f"   Input IFC: {os.path.basename(file_path)}")
 
 def select_output_file():
     global output_ifc_file
@@ -39,7 +152,7 @@ def select_output_file():
     if file_path:
         output_ifc_file = file_path
         # Aktualisiere den Button-Text mit dem Dateinamen
-        button_output_file.config(text=f"Output IFC: {os.path.basename(file_path)}")
+        button_output_file.config(text=f"   Output IFC: {os.path.basename(file_path)}")
 
 # Funktion zum Erstellen des Lichtraumprofils
 def on_create_lichtraumprofil():
@@ -50,7 +163,7 @@ def on_create_lichtraumprofil():
     try:
         lrp_data = eval(lrp_text)
         if not isinstance(lrp_data, list):
-            raise ValueError
+            raise ValueError("Die Koordinaten müssen eine Liste sein.")
     except Exception as e:
         messagebox.showerror("Fehler", f"Bitte gültige Koordinaten für das Lichtraumprofil eingeben.\n{e}")
         return
@@ -113,122 +226,14 @@ def on_perform_clash_test():
     except Exception as e:
         messagebox.showerror("Fehler", f"Fehler beim Speichern der IFC-Datei: {e}")
 
-# Erstellung des Fensters
-window = Tk()
-
-# Skalierung anpassen
-window.tk.call('tk', 'scaling', 1.0)
-
-window.geometry("1000x700")
-window.configure(bg="#FFFFFF")
-
-canvas = Canvas(
-    window,
-    bg="#FFFFFF",
-    height=700,
-    width=1000,
-    bd=0,
-    highlightthickness=0,
-    relief="ridge"
-)
-canvas.place(x=0, y=0)
-
-# Hintergrund-Rechteck
-canvas.create_rectangle(
-    0.0,
-    0.0,
-    1000.0,
-    700.0,
-    fill="#213563",
-    outline=""
-)
-
-# Titeltext
-canvas.create_text(
-    100.0,  # 132.0 * 1.6667
-    73.5,   # 42.0 * 1.75
-    anchor="nw",
-    text="Automatisches Erstellen des Lichtraumprofils und Clash Testing",
-    fill="#FFFFFF",
-    font=("Arial", 26, "bold")
-)
-
-# Input IFC-Datei Text
-canvas.create_text(
-    101.7,  # 61.0 * 1.6667
-    171.5,  # 98.0 * 1.75
-    anchor="nw",
-    text="Input IFC-Datei:",
-    fill="#FFFFFF",
-    font=("Arial", 18)
-)
-
-# Output IFC-Datei Text
-canvas.create_text(
-    101.7,
-    281.75,  # 161.0 * 1.75
-    anchor="nw",
-    text="Output IFC-Datei:",
-    fill="#FFFFFF",
-    font=("Arial", 18)
-)
-
-# Button für Input-Datei
-button_input_file = Button(
-    window,
-    text="   Input IFC-Datei auswählen",  # Einzug mit Leerzeichen
-    borderwidth=0,
-    highlightthickness=0,
-    command=select_input_file,
-    relief="flat",
-    fg="#FFFFFF",
-    bg="#404040",
-    wraplength=750,
-    justify="left",
-    anchor="w",
-    font=("Arial", 16),
-    padx=10,  # Padding nach rechts
-    pady=5    # Padding nach unten
-)
-button_input_file.place(
-    x=101.7,
-    y=224.0,  # 128.0 * 1.75
-    width=796.0,  # 477.0 * 1.6667
-    height=40.0
-)
-
-# Button für Output-Datei
-button_output_file = Button(
-    window,
-    text="   Output IFC-Datei auswählen",  # Einzug mit Leerzeichen
-    borderwidth=0,
-    highlightthickness=0,
-    command=select_output_file,
-    relief="flat",
-    fg="#FFFFFF",
-    bg="#404040",
-    wraplength=750,
-    justify="left",
-    anchor="w",
-    font=("Arial", 16),
-    padx=10,  # Padding nach rechts
-    pady=5    # Padding nach unten
-)
-button_output_file.place(
-    x=101.7,
-    y=332.5,  # 190.0 * 1.75
-    width=796.0,
-    height=40.0
-)
-
 # Text für LRP-Koordinaten
 canvas.create_text(
-    101.7,
-    407.75,  # 233.0 * 1.75
+    150.0,
+    450.0,
     anchor="nw",
     text="Koordinaten des LRPs bezogen auf den Nullpunkt:",
     fill="#FFFFFF",
-    font=("Arial", 18)
+    font=("Arial", 20)
 )
 
 # Einzug im Text-Widget durch Tag-Konfiguration
@@ -241,64 +246,158 @@ entry_1 = Text(
     font=("Arial", 16)
 )
 entry_1.place(
-    x=101.7,
-    y=460.25,  # 263.0 * 1.75
-    width=796.0,
-    height=40.0
+    x=150.0,
+    y=500.0,
+    width=900.0,
+    height=48.0  # Höhe erhöhen
 )
-
 # Tag für linken und vertikalen Einzug
 entry_1.tag_configure(
     "indent",
-    lmargin1=20,  # Linker Einzug
-    lmargin2=20,  # Linker Einzug für Zeilen nach der ersten
-    spacing1=10,   # Abstand oberhalb des Absatzes
-    spacing3=10    # Abstand unterhalb des Absatzes
+    lmargin1=30,  # Linker Einzug erhöht
+    lmargin2=30,  # Linker Einzug für Zeilen nach der ersten erhöht
+    spacing1=15,   # Abstand oberhalb des Absatzes
+    spacing3=15    # Abstand unterhalb des Absatzes
 )
 # Standardwert für die Koordinaten mit Einzug
 entry_1.insert("1.0", "[(-14.5, 0.0), (14.5, 0.0), (14.5, 7.5), (-14.5, 7.5)]", "indent")
 
+# Frames für die Aktionen unten
+frame_actions = Frame(window, bg="#213563")
+frame_actions.place(x=150.0, y=600.0, width=900.0, height=80.0)
+
 # Button für Lichtraumprofil erstellen
 button_3 = Button(
-    window,
-    text="   Lichtraumprofil erstellen",  # Einzug mit Leerzeichen
+    frame_actions,
+    text="   Lichtraumprofil erstellen",
     borderwidth=0,
     highlightthickness=0,
     command=on_create_lichtraumprofil,
     relief="flat",
     fg="#FFFFFF",
     bg="#404040",
-    font=("Arial", 20, "bold"),
-    padx=0,  # Padding nach rechts
-    pady=10    # Padding nach unten
+    font=("Arial", 20),
+    padx=10,
+    pady=10
 )
-button_3.place(
-    x=101.7,
-    y=577.5,
-    width=301.7,
-    height=50.0
-)
+button_3.pack(side="left", fill="both", expand=True, padx=(0, 5), pady=10)
 
 # Button für Clash Test durchführen
 button_4 = Button(
-    window,
-    text="   Clash Test durchführen",  # Einzug mit Leerzeichen
+    frame_actions,
+    text="   Clash Test durchführen",
     borderwidth=0,
     highlightthickness=0,
     command=on_perform_clash_test,
     relief="flat",
     fg="#FFFFFF",
     bg="#404040",
-    font=("Arial", 20, "bold"),
-    padx=0,  # Padding nach rechts
+    font=("Arial", 20),
+    padx=10,
+    pady=10
+)
+button_4.pack(side="left", fill="both", expand=True, padx=(5, 0), pady=10)
+
+# Buttons innerhalb der Frames
+
+# Button für Input-Datei
+button_input_file = Button(
+    frame_input,
+    text="   Input IFC-Datei auswählen",
+    borderwidth=0,
+    highlightthickness=0,
+    command=select_input_file,
+    relief="flat",
+    fg="#FFFFFF",
+    bg="#404040",
+    justify="left",
+    anchor="w",
+    font=("Arial", 16),
+    padx=10,  # Padding nach rechts
     pady=10    # Padding nach unten
 )
-button_4.place(
-    x=476.7,
-    y=577.5,
-    width=301.7,
-    height=50.0
+button_input_file.pack(side="left", fill="both", expand=True, padx=(0, 10))
+
+# Button zum Öffnen des Input-Modells in Blender
+if blender_icon:
+    button_open_input_blender = Button(
+        frame_input,
+        image=blender_icon,
+        borderwidth=0,
+        highlightthickness=0,
+        command=on_open_input_in_blender,
+        relief="flat",
+        bg="#404040",
+        width=48,
+        height=48
+    )
+    button_open_input_blender.pack(side="left", padx=(0, 0), pady=0)
+else:
+    # Fallback, falls das Icon nicht geladen werden konnte
+    button_open_input_blender = Button(
+        frame_input,
+        text="🌀",
+        borderwidth=0,
+        highlightthickness=0,
+        command=on_open_input_in_blender,
+        relief="flat",
+        fg="#FFFFFF",
+        bg="#404040",
+        font=("Arial", 16),
+        padx=10,
+        pady=10
+    )
+    button_open_input_blender.pack(side="left", padx=(10, 0), pady=10)
+
+# Button für Output-Datei
+button_output_file = Button(
+    frame_output,
+    text="   Output IFC-Datei auswählen",
+    borderwidth=0,
+    highlightthickness=0,
+    command=select_output_file,
+    relief="flat",
+    fg="#FFFFFF",
+    bg="#404040",
+    justify="left",
+    anchor="w",
+    font=("Arial", 16),
+    padx=10,
+    pady=10
 )
+button_output_file.pack(side="left", fill="both", expand=True, padx=(0, 10))
+
+# Button zum Öffnen des Output-Modells in Blender
+if blender_icon:
+    button_open_output_blender = Button(
+        frame_output,
+        image=blender_icon,
+        borderwidth=0,
+        highlightthickness=0,
+        command=on_open_output_in_blender,
+        relief="flat",
+        bg="#404040",
+        width=48,
+        height=48
+    )
+    button_open_output_blender.pack(side="left", padx=(0, 0), pady=0)
+else:
+    # Fallback, falls das Icon nicht geladen werden konnte
+    button_open_output_blender = Button(
+        frame_output,
+        text="🌀",
+        borderwidth=0,
+        highlightthickness=0,
+        command=on_open_output_in_blender,
+        relief="flat",
+        fg="#FFFFFF",
+        bg="#404040",
+        font=("Arial", 16),
+        padx=10,
+        pady=10
+    )
+    button_open_output_blender.pack(side="left", padx=(10, 0), pady=10)
+
 
 window.resizable(False, False)
 window.mainloop()
