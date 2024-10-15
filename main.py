@@ -117,7 +117,24 @@ def create_lrp_profile(model, lrp_data):
         ObjectPlacement=built_element.ObjectPlacement,
         Representation=lrp_product_representation
     )
+
+    # Lichtraumprofil färben (grün, leicht transparent)
+    try:
+        lrp_representation_items = lrp_built_element.Representation.Representations[0].Items
+        for item in lrp_representation_items:
+            create_colour_assignment(
+                model,
+                lrp_built_element,
+                item,
+                color_rgb=(0, 150, 130),  # KIT-Grün
+                transparency=0.1          # Leicht transparent
+            )
+        print("Lichtraumprofil wurde erfolgreich gefärbt.")
+    except Exception as e:
+        print(f"Fehler beim Färben des Lichtraumprofils: {e}")
+
     return lrp_built_element
+
     pass
 def filter_elements_by_properties(elements, pset_name, property_name, expected_value=True):
     """
@@ -209,21 +226,6 @@ def perform_clash_detection(model, lrp_element):
             )
         except Exception as e:
             print(f"Fehler beim Färben des Elements mit GUID {guid}: {e}")
-
-    # Lichtraumprofil färben (grün, leicht transparent)
-    try:
-        lrp_representation_items = lrp_element.Representation.Representations[0].Items
-        for item in lrp_representation_items:
-            create_colour_assignment(
-                model,
-                lrp_element,
-                item,
-                color_rgb=(0, 150, 130),  # KIT-Grün
-                transparency=0.1          # Leicht transparent
-            )
-        print("Lichtraumprofil wurde erfolgreich gefärbt.")
-    except Exception as e:
-        print(f"Fehler beim Färben des Lichtraumprofils: {e}")
 
     return model  # Geändertes Modell zurückgeben
     pass

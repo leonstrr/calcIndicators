@@ -19,7 +19,7 @@ input_ifc_file = None
 output_ifc_file = None
 
 # Pfad zur Blender-Executable
-blender_executable = "C:/Program Files/Blender Foundation/Blender/blender.exe"  # Passe diesen Pfad entsprechend an
+blender_executable = "C:/Programme/Blender Foundation/Blender 4.2/blender.exe"
 
 # Erstellung des Fensters
 window = Tk()
@@ -28,7 +28,7 @@ window = Tk()
 window.tk.call('tk', 'scaling', 1.0)
 
 # Fenstergröße anpassen
-window.geometry("1200x800")  # Fenstergröße weiter erhöht
+window.geometry("1200x800")
 window.configure(bg="#FFFFFF")
 
 # Canvas erstellen
@@ -90,6 +90,9 @@ canvas.create_text(
     font=("Arial", 20)
 )
 
+# Pfad zum Blender-Skript
+open_ifc_script = os.path.join(os.path.dirname(__file__), "scripts", "open_ifc.py")
+
 # Funktion zum Laden des Blender-Icons
 def load_blender_icon():
     global blender_icon
@@ -107,14 +110,23 @@ def open_in_blender(file_path):
     if not os.path.isfile(blender_executable):
         messagebox.showerror("Fehler", f"Blender wurde nicht gefunden unter:\n{blender_executable}")
         return
+    if not os.path.isfile(open_ifc_script):
+        messagebox.showerror("Fehler", f"Blender-Skript wurde nicht gefunden unter:\n{open_ifc_script}")
+        return
     if not os.path.isfile(file_path):
         messagebox.showerror("Fehler", f"Die Datei wurde nicht gefunden:\n{file_path}")
         return
     try:
-        subprocess.Popen([blender_executable, file_path])
-        messagebox.showinfo("Erfolg", f"Blender wurde geöffnet mit:\n{os.path.basename(file_path)}")
+        subprocess.Popen([
+            blender_executable,
+            "--python", open_ifc_script,
+            "--",                    # Trennt Blender-Argumente von Skript-Argumenten
+            file_path
+        ])
+        messagebox.showinfo("Erfolg", f"Blender wurde geöffnet und IFC-Datei wird geladen:\n{os.path.basename(file_path)}")
     except Exception as e:
         messagebox.showerror("Fehler", f"Fehler beim Öffnen von Blender: {e}")
+
 
 # Funktion zum Öffnen des Input-Modells in Blender
 def on_open_input_in_blender():
@@ -155,7 +167,7 @@ def select_output_file():
         button_output_file.config(text=f"   Output IFC: {os.path.basename(file_path)}")
 
 # Funktion zum Erstellen des Lichtraumprofils
-def on_create_lichtraumprofil():
+def on_create_lrp_profile():
     if not input_ifc_file or not output_ifc_file:
         messagebox.showwarning("Warnung", "Bitte Input und Output IFC-Datei auswählen.")
         return
@@ -229,7 +241,7 @@ def on_perform_clash_test():
 # Text für LRP-Koordinaten
 canvas.create_text(
     150.0,
-    450.0,
+    450.0,  # Verschoben von 500 auf 450
     anchor="nw",
     text="Koordinaten des LRPs bezogen auf den Nullpunkt:",
     fill="#FFFFFF",
@@ -247,9 +259,9 @@ entry_1 = Text(
 )
 entry_1.place(
     x=150.0,
-    y=500.0,
+    y=500.0,  # Verschoben von 550 auf 500
     width=900.0,
-    height=48.0  # Höhe erhöhen
+    height=48.0  # Höhe erhöhen (optional: auf 100.0 erhöhen für mehr Platz)
 )
 # Tag für linken und vertikalen Einzug
 entry_1.tag_configure(
@@ -264,7 +276,7 @@ entry_1.insert("1.0", "[(-14.5, 0.0), (14.5, 0.0), (14.5, 7.5), (-14.5, 7.5)]", 
 
 # Frames für die Aktionen unten
 frame_actions = Frame(window, bg="#213563")
-frame_actions.place(x=150.0, y=600.0, width=900.0, height=80.0)
+frame_actions.place(x=150.0, y=600.0, width=900.0, height=80.0)  # Geändert von y=650 auf y=600
 
 # Button für Lichtraumprofil erstellen
 button_3 = Button(
@@ -272,7 +284,7 @@ button_3 = Button(
     text="   Lichtraumprofil erstellen",
     borderwidth=0,
     highlightthickness=0,
-    command=on_create_lichtraumprofil,
+    command=on_create_lrp_profile,
     relief="flat",
     fg="#FFFFFF",
     bg="#404040",
@@ -331,7 +343,7 @@ if blender_icon:
         width=48,
         height=48
     )
-    button_open_input_blender.pack(side="left", padx=(0, 0), pady=0)
+    button_open_input_blender.pack(side="left", padx=(10, 0), pady=0)  # Angepasstes Padding
 else:
     # Fallback, falls das Icon nicht geladen werden konnte
     button_open_input_blender = Button(
@@ -380,7 +392,7 @@ if blender_icon:
         width=48,
         height=48
     )
-    button_open_output_blender.pack(side="left", padx=(0, 0), pady=0)
+    button_open_output_blender.pack(side="left", padx=(10, 0), pady=0)  # Angepasstes Padding
 else:
     # Fallback, falls das Icon nicht geladen werden konnte
     button_open_output_blender = Button(
@@ -397,7 +409,6 @@ else:
         pady=10
     )
     button_open_output_blender.pack(side="left", padx=(10, 0), pady=10)
-
 
 window.resizable(False, False)
 window.mainloop()
