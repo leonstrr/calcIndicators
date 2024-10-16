@@ -1,11 +1,9 @@
-import sys
-import os
-import multiprocessing
 import ifcopenshell
 import ifcopenshell.geom
 import ifcopenshell.api
 import ifcopenshell.util.element
-from ifcopenshell.util.element import get_psets
+import multiprocessing
+from ifcopenshell.util.element import get_psets, get_property
 
 def process_elements(elements, name_filter="Alignment"):
     """
@@ -39,14 +37,14 @@ def process_elements(elements, name_filter="Alignment"):
             for element in filtered_elements:
                 print(f"#{element.id()} = {element.is_a()}(Name = {element.Name})")
             raise ValueError("Mehrere Elemente gefunden. Das Programm wird abgebrochen.")
-    pass
+
 def create_lrp_profile(model, lrp_data):
     # --- Find the needed data --- #
     # Find street element to copy Representation Context and Object Placement
-    built_element = model.by_type('IfcBuiltElement')[0]  # filter to do
+    built_element = model.by_type('IfcBuiltElement')[0]  # TODO: Filter konkretisieren
     # Find the curve of the alignment
-    alignment = model.by_type('IfcAlignment')[0]  # filter to do
-    alignment_curve = alignment.Representation.Representations[0].Items[0]  # filter to do
+    alignment = model.by_type('IfcAlignment')[0]  # TODO: Filter konkretisieren
+    alignment_curve = alignment.Representation.Representations[0].Items[0]  # TODO: Filter konkretisieren
 
     # --- Create the profile --- #
     lrp_cartesianpointlist = model.create_entity(
@@ -88,6 +86,7 @@ def create_lrp_profile(model, lrp_data):
         ParentProfile=lrp_arbitraryclosedprofile,
         Operator=lrp_profile_operator
     )
+
     lrp_fixedreferencesweptareasolid = model.create_entity(
         "IfcFixedReferenceSweptAreaSolid",
         SweptArea=lrp_derivedprofiledef,
@@ -135,7 +134,6 @@ def create_lrp_profile(model, lrp_data):
 
     return lrp_built_element
 
-    pass
 def filter_elements_by_properties(elements, pset_name, property_name, expected_value=True):
     """
     Filtert IfcBuiltElemente basierend auf einem Property Set und einer spezifischen Eigenschaft.
@@ -159,9 +157,9 @@ def filter_elements_by_properties(elements, pset_name, property_name, expected_v
                 if value == expected_value:
                     filtered.append(element)
     return filtered
-    pass
+
 def perform_clash_detection(model, lrp_element):
-    # --- Vorbereitung Clash testing --- #
+    # --- Vorbereitung Clash Testing --- #
     # Alle IfcBuiltElemente abrufen, um das erstellte Lichtraumprofil einzuschließen
     all_built_elements = model.by_type("IfcBuiltElement")
 
@@ -228,7 +226,7 @@ def perform_clash_detection(model, lrp_element):
             print(f"Fehler beim Färben des Elements mit GUID {guid}: {e}")
 
     return model  # Geändertes Modell zurückgeben
-    pass
+
 def create_colour_assignment(model, element, representation_item, color_rgb, transparency=0.0):
     """
     Weist einem Element eine bestimmte Farbe und Transparenz zu.
@@ -278,34 +276,21 @@ def create_colour_assignment(model, element, representation_item, color_rgb, tra
     )
 
     return styled_item
-    pass
+
 def save_ifc_file(model, output_ifc_file):
+    """Speichert das IFC-Modell."""
     model.write(output_ifc_file)
     print(f"IFC-Datei wurde erfolgreich geschrieben: {output_ifc_file}")
 
-if __name__ == "__main__":
-    # Abmessungen des gewünschten Lichtraumprofils
-    lrp_data = [(-14.5, 0.0), (14.5, 0.0), (14.5, 7.5), (-14.5, 7.5)]
-
-    # IFC-Dateipfad
-    ifc_file_path = 'C:/Pfad/zu/deiner/Input.ifc'
-
-    # Output-Dateipfad
-    output_ifc_file = 'C:/Pfad/zu/deiner/Output.ifc'
-
-    # Checken, ob Datei existiert
-    if not os.path.exists(ifc_file_path):
-        raise FileNotFoundError(f"IFC-Datei wurde nicht gefunden unter: {ifc_file_path}")
-
+def create_lrp_and_perform_clash_detection(input_ifc_file, output_ifc_file, lrp_data):
+    """
+    Kombinierte Funktion zum Erstellen des Lichtraumprofils und Durchführen der Clash Detection.
+    """
     # IFC-Datei laden
-    model = ifcopenshell.open(ifc_file_path)
+    model = ifcopenshell.open(input_ifc_file)
 
     # Lichtraumprofil erstellen
-    try:
-        lrp_element = create_lrp_profile(model, lrp_data)
-    except Exception as e:
-        print(f"Fehler beim Erstellen des Lichtraumprofils: {e}")
-        sys.exit(1)
+    lrp_element = create_lrp_profile(model, lrp_data)
 
     # Clash Detection durchführen
     model = perform_clash_detection(model, lrp_element)
@@ -313,5 +298,4 @@ if __name__ == "__main__":
     # IFC-Datei speichern
     save_ifc_file(model, output_ifc_file)
 
-
-
+    return model

@@ -1,4 +1,4 @@
-from modules.lichtraumprofil import process_elements, create_lrp_profile, filter_elements_by_properties, perform_clash_detection, create_colour_assignment, save_ifc_file
-from modules.property_filter import property_filer
-from modules.bodenaushub import create_raster, point_in_triangle, barycentric_interpolation, interpolate_height, calculate_bounding_box, visualize_mesh, calculate_discrete_volume, visualize_volume_distribution_2d, visualize_volume_bars_3d, calculate_distance_matrix, calculate_transport_work, optimize_transport, calculate_minimum_work
+from gui import main as gui_main
 
+if __name__ == "__main__":
+    gui_main()
