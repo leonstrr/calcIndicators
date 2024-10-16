@@ -10,10 +10,11 @@ if not os.path.exists(ifc_file_path):
 
 model = ifcopenshell.open(ifc_file_path)
 
-products = model.by_type("IfcBuiltElement")
-product = products[0]
-print(product)
-properties_of_product = ifcopenshell.util.element.get_psets(product)
-print(properties_of_product)
-print(properties_of_product)
+def property_filer(model):
+    products = model.by_type("IfcBuiltElement")
+    product = products[0]
+    print(product)
+    properties_of_product = ifcopenshell.util.element.get_psets(product)
+    print(properties_of_product)
+    print(properties_of_product)
 

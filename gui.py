@@ -1,6 +1,7 @@
 from main import create_lrp_profile, perform_clash_detection, save_ifc_file, process_elements
 from pathlib import Path
-from tkinter import Tk, Canvas, Text, Button, Frame, filedialog, messagebox, PhotoImage
+import tkinter as tk
+from tkinter import filedialog, messagebox, PhotoImage, ttk
 import os
 import ifcopenshell
 import sys
@@ -22,18 +23,35 @@ output_ifc_file = None
 blender_executable = "C:/Programme/Blender Foundation/Blender 4.2/blender.exe"
 
 # Erstellung des Fensters
-window = Tk()
+window = tk.Tk()
 
 # Skalierung anpassen
-window.tk.call('tk', 'scaling', 1.0)
+window.tk.call('Automatisierte Berechnung von Nachhaltigkeitsindikatoren v.0.1', 'scaling', 1.0)
 
 # Fenstergröße anpassen
 window.geometry("1200x800")
 window.configure(bg="#FFFFFF")
 
+# Notebook erstellen
+notebook = ttk.Notebook(window)
+notebook.pack(expand=True, fill='both')
+
+# Tab 1: Lichtraumprofil und Clash Detection
+tab1 = ttk.Frame(notebook)
+notebook.add(tab1, text='Lichtraumprofil')
+
+# Tab 2: Bodenaushub Berechnungen
+tab2 = ttk.Frame(notebook)
+notebook.add(tab2, text='Bodenaushub')
+
+# Tab 3: Property-Filter
+tab3 = ttk.Frame(notebook)
+notebook.add(tab3, text='Property-Filter')
+
+# --- Inhalte fuer Tab 1 (Lichtraumprofil) --- #
 # Canvas erstellen
-canvas = Canvas(
-    window,
+canvas = tk.Canvas(
+    tab1,
     bg="#FFFFFF",
     height=800,
     width=1200,
@@ -64,10 +82,10 @@ canvas.create_text(
 )
 
 # Frames für die Dateiauswahl und Blender-Buttons
-frame_input = Frame(window, bg="#213563")
+frame_input = tk.Frame(tab1, bg="#213563")
 frame_input.place(x=150.0, y=200.0, width=900.0, height=48.0)
 
-frame_output = Frame(window, bg="#213563")
+frame_output = tk.Frame(tab1, bg="#213563")
 frame_output.place(x=150.0, y=350.0, width=900.0, height=48.0)
 
 # Input IFC-Datei Text
@@ -249,8 +267,8 @@ canvas.create_text(
 )
 
 # Einzug im Text-Widget durch Tag-Konfiguration
-entry_1 = Text(
-    window,
+entry_1 = tk.Text(
+    tab1,
     bd=0,
     bg="#404040",
     fg="#FFFFFF",
@@ -275,11 +293,11 @@ entry_1.tag_configure(
 entry_1.insert("1.0", "[(-14.5, 0.0), (14.5, 0.0), (14.5, 7.5), (-14.5, 7.5)]", "indent")
 
 # Frames für die Aktionen unten
-frame_actions = Frame(window, bg="#213563")
+frame_actions = tk.Frame(tab1, bg="#213563")
 frame_actions.place(x=150.0, y=600.0, width=900.0, height=80.0)  # Geändert von y=650 auf y=600
 
 # Button für Lichtraumprofil erstellen
-button_3 = Button(
+button_3 = tk.Button(
     frame_actions,
     text="   Lichtraumprofil erstellen",
     borderwidth=0,
@@ -295,7 +313,7 @@ button_3 = Button(
 button_3.pack(side="left", fill="both", expand=True, padx=(0, 5), pady=10)
 
 # Button für Clash Test durchführen
-button_4 = Button(
+button_4 = tk.Button(
     frame_actions,
     text="   Clash Test durchführen",
     borderwidth=0,
@@ -313,7 +331,7 @@ button_4.pack(side="left", fill="both", expand=True, padx=(5, 0), pady=10)
 # Buttons innerhalb der Frames
 
 # Button für Input-Datei
-button_input_file = Button(
+button_input_file = tk.Button(
     frame_input,
     text="   Input IFC-Datei auswählen",
     borderwidth=0,
@@ -332,7 +350,7 @@ button_input_file.pack(side="left", fill="both", expand=True, padx=(0, 10))
 
 # Button zum Öffnen des Input-Modells in Blender
 if blender_icon:
-    button_open_input_blender = Button(
+    button_open_input_blender = tk.Button(
         frame_input,
         image=blender_icon,
         borderwidth=0,
@@ -346,7 +364,7 @@ if blender_icon:
     button_open_input_blender.pack(side="left", padx=(10, 0), pady=0)  # Angepasstes Padding
 else:
     # Fallback, falls das Icon nicht geladen werden konnte
-    button_open_input_blender = Button(
+    button_open_input_blender = tk.Button(
         frame_input,
         text="🌀",
         borderwidth=0,
@@ -362,7 +380,7 @@ else:
     button_open_input_blender.pack(side="left", padx=(10, 0), pady=10)
 
 # Button für Output-Datei
-button_output_file = Button(
+button_output_file = tk.Button(
     frame_output,
     text="   Output IFC-Datei auswählen",
     borderwidth=0,
@@ -381,7 +399,7 @@ button_output_file.pack(side="left", fill="both", expand=True, padx=(0, 10))
 
 # Button zum Öffnen des Output-Modells in Blender
 if blender_icon:
-    button_open_output_blender = Button(
+    button_open_output_blender = tk.Button(
         frame_output,
         image=blender_icon,
         borderwidth=0,
@@ -395,7 +413,7 @@ if blender_icon:
     button_open_output_blender.pack(side="left", padx=(10, 0), pady=0)  # Angepasstes Padding
 else:
     # Fallback, falls das Icon nicht geladen werden konnte
-    button_open_output_blender = Button(
+    button_open_output_blender = tk.Button(
         frame_output,
         text="🌀",
         borderwidth=0,
@@ -409,6 +427,18 @@ else:
         pady=10
     )
     button_open_output_blender.pack(side="left", padx=(10, 0), pady=10)
+
+# --- Inhalte fuer Tab 2 (Bodenaushub) --- #
+label_tab2 = tk.Label(tab2, text="Berechnungen zum Bodenaushub", font=("Arial", 20))
+label_tab2.pack(pady=20)
+# Weitere Widgets hinzufügen
+
+# --- Inhalte fuer Tab 3 (Property-Filer)
+label_tab3 = tk.Label(tab3, text="Filter nach Property Sets", font=("Arial", 20))
+label_tab3.pack(pady=20)
+
+# Weitere Widgets hinzufügen
+
 
 window.resizable(False, False)
 window.mainloop()
