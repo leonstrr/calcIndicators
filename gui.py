@@ -9,13 +9,8 @@ import datetime
 import ast
 
 from modules.lichtraumprofil import create_lrp_and_perform_clash_detection
-from modules.bodenaushub import (
-    create_raster, point_in_triangle, barycentric_interpolation, interpolate_height,
-    calculate_bounding_box, visualize_mesh, calculate_discrete_volume,
-    visualize_volume_distribution_2d, visualize_volume_bars_3d,
-    calculate_distance_matrix, calculate_transport_work, optimize_transport,
-    calculate_minimum_work
-)
+from modules.bodenaushub import perform_bodenaushub
+
 from modules.property_filter import property_filer
 
 # DPI-Awareness aktivieren (nur für Windows)
@@ -29,12 +24,12 @@ if sys.platform == "win32":
 # Pfad zur Blender-Executable
 blender_executable = "C:/Programme/Blender Foundation/Blender 4.2/blender.exe"
 
-# Globale Variable für die Input IFC-Datei
+# Globale Variable für die Input IFC-Datei im LRP-Modul
 input_ifc_file = None
 
 # Pfad zum Blender-Skript
 open_ifc_script = os.path.join(os.path.dirname(__file__), "scripts", "open_ifc.py")
-
+open_stl_script = os.path.join(os.path.dirname(__file__), "scripts", "open_stl.py")
 
 def load_blender_icon():
     """Lädt das Blender-Icon und das Hover-Icon."""
@@ -69,6 +64,28 @@ def open_in_blender(file_path):
     except Exception as e:
         messagebox.showerror("Fehler", f"Fehler beim Öffnen von Blender: {e}")
 
+def open_stl_in_blender(stl_files):
+    """Öffnet mehrere STL-Dateien in Blender."""
+    if not os.path.isfile(blender_executable):
+        messagebox.showerror("Fehler", f"Blender wurde nicht gefunden unter:\n{blender_executable}")
+        return
+    if not os.path.isfile(open_stl_script):
+        messagebox.showerror("Fehler", f"Blender-Skript wurde nicht gefunden unter:\n{open_stl_script}")
+        return
+    for file_path in stl_files:
+        if not os.path.isfile(file_path):
+            messagebox.showerror("Fehler", f"Die Datei wurde nicht gefunden:\n{file_path}")
+            return
+    try:
+        # Starte Blender und importiere die STL-Dateien
+        subprocess.Popen([
+            blender_executable,
+            "--python", open_stl_script,
+            "--"
+        ] + stl_files)  # Übergibt alle STL-Dateien nach '--'
+        messagebox.showinfo("Erfolg", "STL-Dateien wurden in Blender importiert.")
+    except Exception as e:
+        messagebox.showerror("Fehler", f"Fehler beim Öffnen von Blender: {e}")
 
 def on_open_input_in_blender():
     """Handler zum Öffnen des Input-Modells in Blender."""
@@ -341,10 +358,146 @@ def main():
     # Hover-Effekte für das Eingabefeld hinzufügen
     add_hover_effect(entry_1, hover_bg="#505050", normal_bg="#404040")
 
+    # --- Inhalte für Tab 2 (Bodenaushub) --- #
+    # Titeltext für Tab 2
+    canvas_tab2 = tk.Canvas(
+        tab2,
+        bg="#213563",
+        bd=0,
+        highlightthickness=0,
+        relief="ridge"
+    )
+    canvas_tab2.pack(fill='both', expand=True)
+
+    canvas_tab2.create_text(
+        150.0,
+        100.0,
+        anchor="nw",
+        text="Bodenaushub Berechnungen",
+        fill="#FFFFFF",
+        font=("Arial", 28, "bold")
+    )
+
+    # Frames für die STL-Dateiauswahl
+    frame_stl = tk.Frame(tab2, bg="#213563")
+    frame_stl.place(x=150.0, y=200.0, width=900.0, height=100.0)
+
+    # STL-Datei Zustand 0
+    canvas_tab2.create_text(
+        150.0,
+        165.0,
+        anchor="nw",
+        text="STL-Datei Zustand 0 auswählen:",
+        fill="#FFFFFF",
+        font=("Arial", 20)
+    )
+
+    button_stl_z0 = tk.Button(
+        frame_stl,
+        text="   STL-Datei Zustand 0 auswählen...",
+        borderwidth=0,
+        highlightthickness=0,
+        command=lambda: select_stl_file(button_stl_z0, "zustand0_file"),
+        relief="flat",
+        fg="#FFFFFF",
+        bg="#404040",
+        justify="left",
+        anchor="w",
+        font=("Arial", 16),
+        padx=10,
+        pady=10
+    )
+    button_stl_z0.pack(side="left", fill="both", expand=True, padx=(0, 10))
+
+    # Hover-Effekte für das STL-Zustand0 Button hinzufügen
+    add_hover_effect(button_stl_z0, hover_bg="#505050", normal_bg="#404040")
+
+    # STL-Datei Zustand 1
+    canvas_tab2.create_text(
+        150.0,
+        245.0,
+        anchor="nw",
+        text="STL-Datei Zustand 1 auswählen:",
+        fill="#FFFFFF",
+        font=("Arial", 20)
+    )
+
+    button_stl_z1 = tk.Button(
+        frame_stl,
+        text="   STL-Datei Zustand 1 auswählen...",
+        borderwidth=0,
+        highlightthickness=0,
+        command=lambda: select_stl_file(button_stl_z1, "zustand1_file"),
+        relief="flat",
+        fg="#FFFFFF",
+        bg="#404040",
+        justify="left",
+        anchor="w",
+        font=("Arial", 16),
+        padx=10,
+        pady=10
+    )
+    button_stl_z1.pack(side="left", fill="both", expand=True, padx=(0, 10))
+
+    # Hover-Effekte für das STL-Zustand1 Button hinzufügen
+    add_hover_effect(button_stl_z1, hover_bg="#505050", normal_bg="#404040")
+
+    # Button zum Starten der Bodenaushub-Berechnung
+    frame_berechnung = tk.Frame(tab2, bg="#213563")
+    frame_berechnung.place(x=150.0, y=350.0, width=900.0, height=80.0)
+
+    button_start_berechnung = tk.Button(
+        frame_berechnung,
+        text="   Berechnung starten",
+        borderwidth=0,
+        highlightthickness=0,
+        command=lambda: start_bodenaushub(),
+        relief="flat",
+        fg="#FFFFFF",
+        bg="#404040",
+        font=("Arial", 20, 'bold'),
+        padx=10,
+        pady=10
+    )
+    button_start_berechnung.pack(side="left", fill="both", expand=True, padx=(0, 0), pady=10)
+
+    # Hover-Effekte für das Start-Berechnung Button hinzufügen
+    add_hover_effect(button_start_berechnung, hover_bg="#505050", normal_bg="#404040")
+
+    # Variablen zum Speichern der STL-Dateipfade
+    zustand0_file = None
+    zustand1_file = None
+
+    def select_stl_file(button, var_name):
+        """Öffnet einen Dateidialog zum Auswählen der STL-Datei."""
+        nonlocal zustand0_file, zustand1_file
+        file_path = filedialog.askopenfilename(
+            filetypes=[("STL Files", "*.stl")],
+            title="STL-Datei auswählen"
+        )
+        if file_path:
+            if var_name == "zustand0_file":
+                zustand0_file = file_path
+                button.config(text=f"   STL-Zustand 0: {Path(file_path).name}")
+            elif var_name == "zustand1_file":
+                zustand1_file = file_path
+                button.config(text=f"   STL-Zustand 1: {Path(file_path).name}")
+
+    def start_bodenaushub():
+        """Startet die Bodenaushub-Berechnung."""
+        if not zustand0_file or not zustand1_file:
+            messagebox.showwarning("Warnung", "Bitte beide STL-Dateien auswählen.")
+            return
+        try:
+            perform_bodenaushub(zustand0_file, zustand1_file)
+            messagebox.showinfo("Erfolg", "Bodenaushub-Berechnung erfolgreich abgeschlossen.")
+        except Exception as e:
+            messagebox.showerror("Fehler", f"Fehler bei der Bodenaushub-Berechnung:\n{e}")
+
     # --- Weitere Tabs Inhalte --- #
-    # Tab 2: Bodenaushub Berechnungen
-    label_tab2 = tk.Label(tab2, text="Berechnungen zum Bodenaushub", font=("Arial", 20))
-    label_tab2.pack(pady=20)
+    # Tab 3: Property-Filter
+    label_tab3 = tk.Label(tab3, text="Filter nach Property Sets", font=("Arial", 20))
+    label_tab3.pack(pady=20)
     # Weitere Widgets hinzufügen
 
     # Tab 3: Property-Filter
