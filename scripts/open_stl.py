@@ -16,7 +16,7 @@ def import_stl(filepath):
         print(f"Datei nicht gefunden: {filepath}")
         return
     try:
-        bpy.ops.import_mesh.stl(filepath=filepath)
+        bpy.ops.wm.stl_import(filepath=filepath)
         print(f"Importiert: {filepath}")
     except Exception as e:
         print(f"Fehler beim Importieren von {filepath}: {e}")
@@ -25,25 +25,25 @@ def import_stl(filepath):
 def main():
     """
     Hauptfunktion zum Importieren von STL-Dateien.
-    Erwartet, dass die Dateipfade nach dem '--' Argument übergeben werden.
+    Erwartet, dass der Dateipfad nach dem '--' Argument übergeben wird.
 
     Returns:
     None
     """
     argv = sys.argv
-    # Finden des '--' Arguments, um die STL-Dateipfade zu extrahieren
+    # Finden des '--' Arguments, um den STL-Dateipfad zu extrahieren
     if "--" in argv:
         argv = argv[argv.index("--") + 1:]
     else:
         argv = []
 
     if not argv:
-        print("Keine STL-Dateien angegeben. Verwende das Format:")
-        print("blender --background --python open_stl.py -- <pfad_zur_stl1> <pfad_zur_stl2> ...")
+        print("Keine STL-Datei angegeben. Verwende das Format:")
+        print("blender --background --python open_stl.py -- <pfad_zur_stl>")
         return
 
-    for filepath in argv:
-        import_stl(filepath)
+    stl_file = argv[0]
+    import_stl(stl_file)
 
 
 if __name__ == "__main__":

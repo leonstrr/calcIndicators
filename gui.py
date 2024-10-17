@@ -1,17 +1,32 @@
+# gui.py
+
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, PhotoImage, ttk
 import os
-import ifcopenshell
 import sys
-import subprocess
 import datetime
 import ast
 
 from modules.lichtraumprofil import create_lrp_and_perform_clash_detection
-from modules.bodenaushub import perform_bodenaushub
-
+from modules.bodenaushub import perform_bodenaushub, visualize_results
 from modules.property_filter import property_filer
+
+from gui_modules.gui_helpers import (
+    add_hover_effect,
+    load_blender_icon,
+    open_in_blender,
+    open_stl_in_blender,
+    generate_output_file_path
+)
+from gui_modules.callbacks import (
+    on_open_input_in_blender,
+    select_input_file,
+    on_create_lrp_and_clash_detection,
+    select_stl_file,
+    open_specific_stl_in_blender,
+    start_bodenaushub
+)
 
 # DPI-Awareness aktivieren (nur für Windows)
 if sys.platform == "win32":
@@ -24,160 +39,17 @@ if sys.platform == "win32":
 # Pfad zur Blender-Executable
 blender_executable = "C:/Programme/Blender Foundation/Blender 4.2/blender.exe"
 
-# Globale Variable für die Input IFC-Datei im LRP-Modul
-input_ifc_file = None
-
-# Pfad zum Blender-Skript
+# Pfade zu den Blender-Skripten
 open_ifc_script = os.path.join(os.path.dirname(__file__), "scripts", "open_ifc.py")
-open_stl_script = os.path.join(os.path.dirname(__file__), "scripts", "open_stl.py")
+open_stl_script = os.path.join(os.path.dirname(__file__), "scripts", "open_stl.py")  # Neuer Skriptpfad
 
-def load_blender_icon():
-    """Lädt das Blender-Icon und das Hover-Icon."""
-    global blender_icon, blender_icon_hover
-    try:
-        blender_icon = PhotoImage(file=os.path.join("assets", "blender_icon.png"))
-        blender_icon_hover = PhotoImage(file=os.path.join("assets", "blender_icon_hover.png"))
-    except Exception as e:
-        messagebox.showerror("Fehler", f"Blender-Icon konnte nicht geladen werden:\n{e}")
-        # Da wir keine Fallback-Optionen mehr haben, brechen wir das Programm ab
-        raise e  # Optional: Programm abbrechen, wenn Icons nicht geladen werden können
-
-
-def open_in_blender(file_path):
-    """Öffnet eine IFC-Datei in Blender."""
-    if not os.path.isfile(blender_executable):
-        messagebox.showerror("Fehler", f"Blender wurde nicht gefunden unter:\n{blender_executable}")
-        return
-    if not os.path.isfile(open_ifc_script):
-        messagebox.showerror("Fehler", f"Blender-Skript wurde nicht gefunden unter:\n{open_ifc_script}")
-        return
-    if not os.path.isfile(file_path):
-        messagebox.showerror("Fehler", f"Die Datei wurde nicht gefunden:\n{file_path}")
-        return
-    try:
-        subprocess.Popen([
-            blender_executable,
-            "--python", open_ifc_script,
-            "--",                    # Trennt Blender-Argumente von Skript-Argumenten
-            file_path
-        ])
-    except Exception as e:
-        messagebox.showerror("Fehler", f"Fehler beim Öffnen von Blender: {e}")
-
-def open_stl_in_blender(stl_files):
-    """Öffnet mehrere STL-Dateien in Blender."""
-    if not os.path.isfile(blender_executable):
-        messagebox.showerror("Fehler", f"Blender wurde nicht gefunden unter:\n{blender_executable}")
-        return
-    if not os.path.isfile(open_stl_script):
-        messagebox.showerror("Fehler", f"Blender-Skript wurde nicht gefunden unter:\n{open_stl_script}")
-        return
-    for file_path in stl_files:
-        if not os.path.isfile(file_path):
-            messagebox.showerror("Fehler", f"Die Datei wurde nicht gefunden:\n{file_path}")
-            return
-    try:
-        # Starte Blender und importiere die STL-Dateien
-        subprocess.Popen([
-            blender_executable,
-            "--python", open_stl_script,
-            "--"
-        ] + stl_files)  # Übergibt alle STL-Dateien nach '--'
-        messagebox.showinfo("Erfolg", "STL-Dateien wurden in Blender importiert.")
-    except Exception as e:
-        messagebox.showerror("Fehler", f"Fehler beim Öffnen von Blender: {e}")
-
-def on_open_input_in_blender():
-    """Handler zum Öffnen des Input-Modells in Blender."""
-    global input_ifc_file
-    if not input_ifc_file:
-        messagebox.showwarning("Warnung", "Bitte zuerst eine Input IFC-Datei auswählen.")
-        return
-    open_in_blender(input_ifc_file)
-
-
-def select_input_file(button_input_file):
-    """Öffnet einen Dateidialog zum Auswählen der Input-IFC-Datei."""
-    global input_ifc_file
-    file_path = filedialog.askopenfilename(
-        filetypes=[("IFC Files", "*.ifc")],
-        title="Input IFC-Datei auswählen"
-    )
-    if file_path:
-        input_ifc_file = file_path
-        # Aktualisiere den Button-Text mit dem Dateinamen
-        button_input_file.config(text=f"   Input IFC: {Path(file_path).name}")
-
-
-def generate_output_file_path(input_path):
-    """Generiert einen automatischen Output-Dateipfad basierend auf dem Input."""
-    input_path = Path(input_path)
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_filename = f"{input_path.stem}_output_{timestamp}{input_path.suffix}"
-    return input_path.parent / output_filename
-
-
-def on_create_lrp_and_clash_detection(entry_1):
-    """Handler zum Erstellen des Lichtraumprofils und Durchführen der Clash Detection."""
-    global input_ifc_file
-    if not input_ifc_file:
-        messagebox.showwarning("Warnung", "Bitte eine Input IFC-Datei auswählen.")
-        return
-
-    lrp_text = entry_1.get("1.0", "end-1c")
-    try:
-        lrp_data = ast.literal_eval(lrp_text)
-        if not isinstance(lrp_data, list):
-            raise ValueError("Die Koordinaten müssen eine Liste sein.")
-    except Exception as e:
-        messagebox.showerror("Fehler", f"Bitte gültige Koordinaten für das Lichtraumprofil eingeben.\n{e}")
-        return
-
-    # Generiere automatisch einen Output-Dateipfad
-    output_ifc_file = generate_output_file_path(input_ifc_file)
-
-    # Lichtraumprofil erstellen und Clash Detection durchführen
-    try:
-        create_lrp_and_perform_clash_detection(input_ifc_file, output_ifc_file, lrp_data)
-        open_in_blender(output_ifc_file)  # Öffne die neue IFC-Datei in Blender
-    except Exception as e:
-        messagebox.showerror("Fehler", f"Fehler bei der Verarbeitung: {e}")
-
-
-def add_hover_effect(widget, hover_bg=None, normal_bg=None, hover_image=None, normal_image=None):
-    """
-    Fügt einem Widget Hover-Effekte hinzu.
-
-    :param widget: Das Widget, dem die Effekte hinzugefügt werden sollen.
-    :param hover_bg: Hintergrundfarbe beim Hover.
-    :param normal_bg: Hintergrundfarbe bei Nicht-Hover.
-    :param hover_image: Bild beim Hover (für Image-Buttons).
-    :param normal_image: Bild bei Nicht-Hover (für Image-Buttons).
-    """
-    if hover_bg and normal_bg:
-        def on_enter(event):
-            widget.config(bg=hover_bg)
-
-        def on_leave(event):
-            widget.config(bg=normal_bg)
-
-        widget.bind("<Enter>", on_enter)
-        widget.bind("<Leave>", on_leave)
-
-    if hover_image and normal_image:
-        def on_enter_img(event):
-            widget.config(image=hover_image)
-
-        def on_leave_img(event):
-            widget.config(image=normal_image)
-
-        widget.bind("<Enter>", on_enter_img)
-        widget.bind("<Leave>", on_leave_img)
-
+def test_open_blender(blender_executable, open_stl_script):
+    """Testet das Öffnen von Blender mit einer Beispiel-Datei."""
+    test_file = "C:/Pfad/zu/deiner/Beispiel.stl"  # Ändere diesen Pfad zu einer existierenden STL-Datei
+    open_stl_in_blender([test_file], blender_executable, open_stl_script)
 
 def main():
     """Hauptfunktion zur Erstellung der GUI."""
-    global input_ifc_file
 
     # Erstellung des Fensters
     window = tk.Tk()
@@ -186,12 +58,17 @@ def main():
     window.tk.call('tk', 'scaling', 1.0)
 
     # Fenstergröße anpassen
-    window.geometry("1200x800")
+    window.geometry("1200x800")  # Größer für die Grafiken
     window.configure(bg="#FFFFFF")
     window.title("Automatisierte Berechnung von Nachhaltigkeitsindikatoren v.0.1")
 
     # Laden des Blender-Icons und des Hover-Icons
-    load_blender_icon()
+    blender_icon, blender_icon_hover = load_blender_icon()
+
+    # Erstellen der StringVar-Variablen
+    input_ifc_file_var = tk.StringVar()
+    zustand0_file_var = tk.StringVar()
+    zustand1_file_var = tk.StringVar()
 
     # Stil für die Notebook-Tabs definieren
     style = ttk.Style()
@@ -226,46 +103,46 @@ def main():
 
     # --- Inhalte für Tab 1 (Lichtraumprofil) --- #
     # Canvas erstellen mit blauer Hintergrundfarbe und dynamischer Größe
-    canvas = tk.Canvas(
+    canvas1 = tk.Canvas(
         tab1,
         bg="#213563",  # Setze den Hintergrund auf Blau
         bd=0,
         highlightthickness=0,
         relief="ridge"
     )
-    canvas.pack(fill='both', expand=True)
+    canvas1.pack(fill='both', expand=True)
 
     # Titeltext
-    canvas.create_text(
+    canvas1.create_text(
         150.0,
-        100.0,
+        50.0,
         anchor="nw",
         text="Lichtraumprofil und Clash Testing",
         fill="#FFFFFF",
         font=("Arial", 28, "bold")
     )
 
-    # Frames für die Dateiauswahl und Blender-Buttons
-    frame_input = tk.Frame(tab1, bg="#213563")
-    frame_input.place(x=150.0, y=200.0, width=900.0, height=48.0)
+    # Hauptframe für die IFC-Datei-Auswahl
+    frame_ifc = tk.Frame(tab1, bg="#213563")
+    frame_ifc.place(x=150.0, y=100.0, width=900.0, height=48.0)  # Höhe auf 48.0 angepasst
 
-    # Input IFC-Datei Text
-    canvas.create_text(
-        150.0,
-        165.0,
-        anchor="nw",
+    # Label für Input IFC-Datei
+    label_ifc = tk.Label(
+        frame_ifc,
         text="Input IFC-Datei:",
-        fill="#FFFFFF",
-        font=("Arial", 20)
+        bg="#213563",
+        fg="#FFFFFF",
+        font=("Arial", 22)
     )
+    label_ifc.pack(side="left", padx=(0, 10), pady=0)
 
-    # Input-Datei Button
+    # Button zur Auswahl der IFC-Datei
     button_input_file = tk.Button(
-        frame_input,
+        frame_ifc,
         text="   Input IFC-Datei auswählen...",
         borderwidth=0,
         highlightthickness=0,
-        command=lambda: select_input_file(button_input_file),
+        command=lambda: select_input_file(button_input_file, input_ifc_file_var, zustand0_file_var, zustand1_file_var),
         relief="flat",
         fg="#FFFFFF",
         bg="#404040",
@@ -273,44 +150,51 @@ def main():
         anchor="w",
         font=("Arial", 16),
         padx=10,  # Padding nach rechts
-        pady=10    # Padding nach unten
+        pady=5    # Padding nach unten auf 5 angepasst
     )
-    button_input_file.pack(side="left", fill="both", expand=True, padx=(0, 10))
+    button_input_file.pack(side="left", fill='both', expand=True, padx=(0, 10), pady=0)
 
-    # Hover-Effekte für das Input-Datei Button hinzufügen
+
+    # Hover-Effekte für den Input-Datei-Button hinzufügen
     add_hover_effect(button_input_file, hover_bg="#505050", normal_bg="#404040")
 
-    # Button zum Öffnen des Input-Modells in Blender mit Hover-Effekten
+    # Blender-Icon Button zum Öffnen der IFC-Datei in Blender
     button_open_input_blender = tk.Button(
-        frame_input,
+        frame_ifc,
         image=blender_icon,
         borderwidth=0,
         highlightthickness=0,
-        command=on_open_input_in_blender,
+        command=lambda: on_open_input_in_blender(
+            input_ifc_file_var.get(),
+            blender_executable,
+            open_ifc_script
+        ),
         relief="flat",
         bg="#213563",
         width=48,
         height=48
     )
-    button_open_input_blender.pack(side="left", padx=(10, 0), pady=0)  # Angepasstes Padding
+    button_open_input_blender.pack(side="left", padx=(10, 0), pady=0)
 
     # Hover-Effekte für das Blender-Icon hinzufügen
     add_hover_effect(button_open_input_blender, hover_image=blender_icon_hover, normal_image=blender_icon)
 
     # Button für Lichtraumprofil erstellen & Clash Detection durchführen
-    frame_actions = tk.Frame(tab1, bg="#213563")
-    frame_actions.place(x=150.0, y=450, width=900.0, height=80.0)
+    frame_actions1 = tk.Frame(tab1, bg="#213563")
+    frame_actions1.place(x=150.0, y=320.0, width=900.0, height=80.0)  # Position auf y=320.0 verschoben
 
     button_combined = tk.Button(
-        frame_actions,
+        frame_actions1,
         text="   Lichtraumprofil erstellen und Clash Detection ausführen",
         borderwidth=0,
         highlightthickness=0,
-        command=lambda: on_create_lrp_and_clash_detection(entry_1),
+        command=lambda: on_create_lrp_and_clash_detection(
+            entry_1, input_ifc_file_var.get(), blender_executable, open_ifc_script
+        ),
         relief="flat",
         fg="#FFFFFF",
         bg="#404040",
-        font=("Arial", 20, 'bold'),
+        font=("Arial", 22, 'bold'),
         padx=10,
         pady=10
     )
@@ -320,16 +204,17 @@ def main():
     add_hover_effect(button_combined, hover_bg="#505050", normal_bg="#404040")
 
     # --- Text und Eingabefeld für LRP-Koordinaten --- #
-    canvas.create_text(
+    # Koordinaten Label
+    canvas1.create_text(
         150.0,
-        315.0,
+        180.0,
         anchor="nw",
         text="Koordinaten des LRPs bezogen auf den Nullpunkt:",
         fill="#FFFFFF",
-        font=("Arial", 20)
+        font=("Arial", 22)
     )
 
-    # Einzug im Text-Widget durch Tag-Konfiguration
+    # Eingabefeld für Koordinaten mit angepasster Höhe
     entry_1 = tk.Text(
         tab1,
         bd=0,
@@ -340,122 +225,131 @@ def main():
     )
     entry_1.place(
         x=150.0,
-        y=350.0,
+        y=210.0,
         width=900.0,
-        height=48.0  # Erhöhte Höhe für mehr Platz
+        height=48.0  # Höhe auf 48.0 angepasst
     )
     # Tag für linken und vertikalen Einzug
     entry_1.tag_configure(
-        "indent",
+         "indent",
         lmargin1=30,  # Linker Einzug erhöht
         lmargin2=30,  # Linker Einzug für Zeilen nach der ersten erhöht
-        spacing1=15,   # Abstand oberhalb des Absatzes
-        spacing3=15    # Abstand unterhalb des Absatzes
+        spacing1=14,    # Abstand oberhalb des Absatzes reduziert
+        spacing3=14     # Abstand unterhalb des Absatzes reduziert
+    )
+    entry_1.tag_configure(
+        "large_font",
+        font=("Arial", 17),
     )
     # Standardwert für die Koordinaten mit Einzug
-    entry_1.insert("1.0", "[(-14.5, 0.0), (14.5, 0.0), (14.5, 7.5), (-14.5, 7.5)]", "indent")
+    entry_1.insert("1.0", "[(-14.5, 0.0), (14.5, 0.0), (14.5, 7.5), (-14.5, 7.5)]", ("indent", "large_font"))
 
     # Hover-Effekte für das Eingabefeld hinzufügen
     add_hover_effect(entry_1, hover_bg="#505050", normal_bg="#404040")
 
     # --- Inhalte für Tab 2 (Bodenaushub) --- #
-    # Titeltext für Tab 2
-    canvas_tab2 = tk.Canvas(
+    # Canvas erstellen mit blauer Hintergrundfarbe und dynamischer Größe
+    canvas2 = tk.Canvas(
         tab2,
         bg="#213563",
         bd=0,
         highlightthickness=0,
         relief="ridge"
     )
-    canvas_tab2.pack(fill='both', expand=True)
+    canvas2.pack(fill='both', expand=True)
 
-    canvas_tab2.create_text(
+    # Titeltext für Tab 2
+    canvas2.create_text(
         150.0,
-        100.0,
+        50.0,
         anchor="nw",
         text="Bodenaushub Berechnungen",
         fill="#FFFFFF",
         font=("Arial", 28, "bold")
     )
 
-    # Frames für die STL-Dateiauswahl
-    frame_stl = tk.Frame(tab2, bg="#213563")
-    frame_stl.place(x=150.0, y=200.0, width=900.0, height=100.0)
+    # Hauptframe für Bodenaushub-Tabs
+    frame_bodenaushub = tk.Frame(tab2, bg="#213563")
+    frame_bodenaushub.place(x=150.0, y=100.0, width=900.0, height=400.0)  # Erhöhte Höhe für mehr Platz
 
-    # STL-Datei Zustand 0
-    canvas_tab2.create_text(
-        150.0,
-        165.0,
-        anchor="nw",
-        text="STL-Datei Zustand 0 auswählen:",
-        fill="#FFFFFF",
-        font=("Arial", 20)
-    )
+    # Funktion zur Erstellung eines Zustands-Frames
+    def create_zustand_frame(parent, zustand_num, text_label):
+        """Erstellt einen Frame für einen bestimmten Zustand mit Label, Button und Blender-Icon."""
+        frame = tk.Frame(parent, bg="#213563")
+        frame.pack(pady=10, fill='x')  # Vertikaler Abstand zwischen den Frames
 
-    button_stl_z0 = tk.Button(
-        frame_stl,
-        text="   STL-Datei Zustand 0 auswählen...",
-        borderwidth=0,
-        highlightthickness=0,
-        command=lambda: select_stl_file(button_stl_z0, "zustand0_file"),
-        relief="flat",
-        fg="#FFFFFF",
-        bg="#404040",
-        justify="left",
-        anchor="w",
-        font=("Arial", 16),
-        padx=10,
-        pady=10
-    )
-    button_stl_z0.pack(side="left", fill="both", expand=True, padx=(0, 10))
+        # Label für den Zustand
+        label = tk.Label(
+            frame,
+            text=text_label,
+            bg="#213563",
+            fg="#FFFFFF",
+            font=("Arial", 22)
+        )
+        label.pack(side="left", padx=(0, 10))
 
-    # Hover-Effekte für das STL-Zustand0 Button hinzufügen
-    add_hover_effect(button_stl_z0, hover_bg="#505050", normal_bg="#404040")
+        # Button zur Auswahl der STL-Datei
+        button = tk.Button(
+            frame,
+            text=f"   STL-Datei Zustand {zustand_num} auswählen...",
+            borderwidth=0,
+            highlightthickness=0,
+            command=lambda: select_stl_file(button, f"zustand{zustand_num}_file", zustand0_file_var, zustand1_file_var),
+            relief="flat",
+            fg="#FFFFFF",
+            bg="#404040",
+            justify="left",
+            anchor="w",
+            font=("Arial", 16),
+            padx=10,
+            pady=10
+        )
+        button.pack(side="left", fill="x", expand=True, padx=(0, 10))
 
-    # STL-Datei Zustand 1
-    canvas_tab2.create_text(
-        150.0,
-        245.0,
-        anchor="nw",
-        text="STL-Datei Zustand 1 auswählen:",
-        fill="#FFFFFF",
-        font=("Arial", 20)
-    )
+        # Hover-Effekte für den Button hinzufügen
+        add_hover_effect(button, hover_bg="#505050", normal_bg="#404040")
 
-    button_stl_z1 = tk.Button(
-        frame_stl,
-        text="   STL-Datei Zustand 1 auswählen...",
-        borderwidth=0,
-        highlightthickness=0,
-        command=lambda: select_stl_file(button_stl_z1, "zustand1_file"),
-        relief="flat",
-        fg="#FFFFFF",
-        bg="#404040",
-        justify="left",
-        anchor="w",
-        font=("Arial", 16),
-        padx=10,
-        pady=10
-    )
-    button_stl_z1.pack(side="left", fill="both", expand=True, padx=(0, 10))
+        # Blender-Icon Button
+        blender_button = tk.Button(
+            frame,
+            image=blender_icon,
+            borderwidth=0,
+            highlightthickness=0,
+            command=lambda: open_specific_stl_in_blender(zustand0_file_var if zustand_num == 0 else zustand1_file_var, blender_executable, open_stl_script),
+            relief="flat",
+            bg="#213563",
+            width=48,
+            height=48
+        )
+        blender_button.pack(side="left", padx=(10, 0), pady=0)
 
-    # Hover-Effekte für das STL-Zustand1 Button hinzufügen
-    add_hover_effect(button_stl_z1, hover_bg="#505050", normal_bg="#404040")
+        # Hover-Effekte für das Blender-Icon hinzufügen
+        add_hover_effect(blender_button, hover_image=blender_icon_hover, normal_image=blender_icon)
+
+    # Erstellung der Frames für Zustand 0 und Zustand 1
+    create_zustand_frame(frame_bodenaushub, 0, "STL-Datei Zustand 0 auswählen:")
+    create_zustand_frame(frame_bodenaushub, 1, "STL-Datei Zustand 1 auswählen:")
 
     # Button zum Starten der Bodenaushub-Berechnung
     frame_berechnung = tk.Frame(tab2, bg="#213563")
-    frame_berechnung.place(x=150.0, y=350.0, width=900.0, height=80.0)
+    frame_berechnung.place(x=150.0, y=320.0, width=900.0, height=80.0)  # Angepasste Position
 
     button_start_berechnung = tk.Button(
         frame_berechnung,
         text="   Berechnung starten",
         borderwidth=0,
         highlightthickness=0,
-        command=lambda: start_bodenaushub(),
+        command=lambda: start_bodenaushub(
+            zustand0_file_var,
+            zustand1_file_var,
+            blender_executable,
+            open_stl_script,
+            label_min_work
+        ),
         relief="flat",
         fg="#FFFFFF",
         bg="#404040",
-        font=("Arial", 20, 'bold'),
+        font=("Arial", 22, 'bold'),
         padx=10,
         pady=10
     )
@@ -464,48 +358,22 @@ def main():
     # Hover-Effekte für das Start-Berechnung Button hinzufügen
     add_hover_effect(button_start_berechnung, hover_bg="#505050", normal_bg="#404040")
 
-    # Variablen zum Speichern der STL-Dateipfade
-    zustand0_file = None
-    zustand1_file = None
+    # Label zur Anzeige der minimalen Arbeit
+    label_min_work = tk.Label(
+        tab2,
+        text="Minimale Arbeit: N/A",
+        bg="#213563",
+        fg="#FFFFFF",
+        font=("Arial", 16)
+    )
+    label_min_work.place(x=150.0, y=420.0)  # Angepasste Position
 
-    def select_stl_file(button, var_name):
-        """Öffnet einen Dateidialog zum Auswählen der STL-Datei."""
-        nonlocal zustand0_file, zustand1_file
-        file_path = filedialog.askopenfilename(
-            filetypes=[("STL Files", "*.stl")],
-            title="STL-Datei auswählen"
-        )
-        if file_path:
-            if var_name == "zustand0_file":
-                zustand0_file = file_path
-                button.config(text=f"   STL-Zustand 0: {Path(file_path).name}")
-            elif var_name == "zustand1_file":
-                zustand1_file = file_path
-                button.config(text=f"   STL-Zustand 1: {Path(file_path).name}")
-
-    def start_bodenaushub():
-        """Startet die Bodenaushub-Berechnung."""
-        if not zustand0_file or not zustand1_file:
-            messagebox.showwarning("Warnung", "Bitte beide STL-Dateien auswählen.")
-            return
-        try:
-            perform_bodenaushub(zustand0_file, zustand1_file)
-            messagebox.showinfo("Erfolg", "Bodenaushub-Berechnung erfolgreich abgeschlossen.")
-        except Exception as e:
-            messagebox.showerror("Fehler", f"Fehler bei der Bodenaushub-Berechnung:\n{e}")
-
-    # --- Weitere Tabs Inhalte --- #
-    # Tab 3: Property-Filter
-    label_tab3 = tk.Label(tab3, text="Filter nach Property Sets", font=("Arial", 20))
+    # --- Inhalte für Tab 3 (Property-Filter) --- #
+    label_tab3 = tk.Label(tab3, text="Filter nach Property Sets", font=("Arial", 22))
     label_tab3.pack(pady=20)
     # Weitere Widgets hinzufügen
 
-    # Tab 3: Property-Filter
-    label_tab3 = tk.Label(tab3, text="Filter nach Property Sets", font=("Arial", 20))
-    label_tab3.pack(pady=20)
-    # Weitere Widgets hinzufügen
-
-    window.resizable(False, False)
+    window.resizable(True, True)  # Ermögliche Fensteranpassung für größere Inhalte
     window.mainloop()
 
 
