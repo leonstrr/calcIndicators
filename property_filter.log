@@ -1,0 +1,9 @@
+2024-10-21 14:23:55,889:INFO:Starte Filterprozess für Datei: C:/Users/leons/iCloudDrive/Masterarbeit/IFC-Files/wuerfel_mit_property_set.ifc
+2024-10-21 14:23:55,925:INFO:IFC-Datei erfolgreich geöffnet.
+2024-10-21 14:23:55,925:INFO:Gefilterte IFC-Datei wird gespeichert unter: C:\Users\leons\iCloudDrive\Masterarbeit\IFC-Files\wuerfel_mit_property_set_filtered_20241021_142355.ifc
+2024-10-21 14:23:55,929:INFO:Verarbeite Element: 3lsb4XeNv6KeagLfm2HerN - Wuerfel mit PSet
+2024-10-21 14:23:55,943:INFO:Element 3lsb4XeNv6KeagLfm2HerN hat eines der Property Sets: ['Pset_ColumnCommon']
+2024-10-21 14:23:55,944:INFO:Element 3lsb4XeNv6KeagLfm2HerN erfüllt die Filterkriterien und wird eingefärbt.
+2024-10-21 14:23:55,953:INFO:Verarbeite Element: 2h0wZNtkbAle8is_GXXT1y - Cube
+2024-10-21 14:23:55,954:INFO:Verarbeite Element: 1SGOtsUIzAmRlZ5kKkYbcA - Cube
+2024-10-21 14:23:55,966:INFO:Gefilterte IFC-Datei erfolgreich gespeichert unter: C:\Users\leons\iCloudDrive\Masterarbeit\IFC-Files\wuerfel_mit_property_set_filtered_20241021_142355.ifc

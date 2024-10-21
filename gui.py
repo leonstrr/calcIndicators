@@ -1,23 +1,13 @@
-# gui.py
-
-from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox, PhotoImage, ttk
+from tkinter import ttk
 import os
 import sys
-import datetime
-import ast
-
-from modules.lichtraumprofil import create_lrp_and_perform_clash_detection
-from modules.bodenaushub import perform_bodenaushub, visualize_results
-from modules.property_filter import property_filer
 
 from gui_modules.gui_helpers import (
     add_hover_effect,
     load_blender_icon,
-    open_in_blender,
-    open_stl_in_blender,
-    generate_output_file_path
+    choose_colour,
+    update_transparency_entry
 )
 from gui_modules.callbacks import (
     on_open_input_in_blender,
@@ -25,7 +15,8 @@ from gui_modules.callbacks import (
     on_create_lrp_and_clash_detection,
     select_stl_file,
     open_specific_stl_in_blender,
-    start_bodenaushub
+    start_bodenaushub,
+    apply_property_filter
 )
 
 # DPI-Awareness aktivieren (nur für Windows)
@@ -42,11 +33,6 @@ blender_executable = "C:/Programme/Blender Foundation/Blender 4.2/blender.exe"
 # Pfade zu den Blender-Skripten
 open_ifc_script = os.path.join(os.path.dirname(__file__), "scripts", "open_ifc.py")
 open_stl_script = os.path.join(os.path.dirname(__file__), "scripts", "open_stl.py")  # Neuer Skriptpfad
-
-def test_open_blender(blender_executable, open_stl_script):
-    """Testet das Öffnen von Blender mit einer Beispiel-Datei."""
-    test_file = "C:/Pfad/zu/deiner/Beispiel.stl"  # Ändere diesen Pfad zu einer existierenden STL-Datei
-    open_stl_in_blender([test_file], blender_executable, open_stl_script)
 
 def main():
     """Hauptfunktion zur Erstellung der GUI."""
@@ -142,7 +128,7 @@ def main():
         text="   Input IFC-Datei auswählen...",
         borderwidth=0,
         highlightthickness=0,
-        command=lambda: select_input_file(button_input_file, input_ifc_file_var, zustand0_file_var, zustand1_file_var),
+        command=lambda: select_input_file(button_input_file, input_ifc_file_var),
         relief="flat",
         fg="#FFFFFF",
         bg="#404040",
@@ -315,7 +301,8 @@ def main():
             image=blender_icon,
             borderwidth=0,
             highlightthickness=0,
-            command=lambda: open_specific_stl_in_blender(zustand0_file_var if zustand_num == 0 else zustand1_file_var, blender_executable, open_stl_script),
+            command=lambda: open_specific_stl_in_blender(zustand0_file_var if zustand_num == 0 else zustand1_file_var,
+                                                         blender_executable, open_stl_script),
             relief="flat",
             bg="#213563",
             width=48,
@@ -330,9 +317,60 @@ def main():
     create_zustand_frame(frame_bodenaushub, 0, "STL-Datei Zustand 0 auswählen:")
     create_zustand_frame(frame_bodenaushub, 1, "STL-Datei Zustand 1 auswählen:")
 
+    # --- Hinzufügen der Eingabefelder für Rastergröße und Depot-Distanz --- #
+    # Frame für die Eingabefelder
+    frame_eingaben = tk.Frame(tab2, bg="#213563")
+    frame_eingaben.place(x=150.0, y=250.0, width=900.0, height=100.0)  # Angepasste Position und Größe
+
+    # Eingabefeld für Rastergröße (cell_size)
+    tk.Label(
+        frame_eingaben,
+        text="Rastergröße [m]:    ",
+        bg="#213563",
+        fg="#FFFFFF",
+        font=("Arial", 18)
+    ).grid(row=0, column=0, padx=0, pady=10, sticky='w')
+
+    cell_size_var = tk.DoubleVar(value=1.0)  # Standardwert 1.0
+    entry_cell_size = tk.Entry(
+        frame_eingaben,
+        textvariable=cell_size_var,
+        width=10,
+        bg="#213563",
+        fg="#FFFFFF",
+        font=("Arial", 16)
+    )
+    entry_cell_size.grid(row=0, column=1, padx=10, pady=10, sticky='w')
+
+    # Hover-Effekte für das Rastergröße Eingabefeld hinzufügen
+    add_hover_effect(entry_cell_size, hover_bg="#505050", normal_bg="#404040")
+
+    # Eingabefeld für Depot-Distanz (depot_distance)
+    tk.Label(
+        frame_eingaben,
+        text="Distanz zur Deponie [m]:",
+        bg="#213563",
+        fg="#FFFFFF",
+        font=("Arial", 18)
+    ).grid(row=1, column=0, padx=0, pady=10, sticky='w')
+
+    depot_distance_var = tk.DoubleVar(value=50.0)  # Standardwert 50.0
+    entry_depot_distance = tk.Entry(
+        frame_eingaben,
+        textvariable=depot_distance_var,
+        width=10,
+        bg="#213563",
+        fg='#FFFFFF',
+        font=("Arial", 16)
+    )
+    entry_depot_distance.grid(row=1, column=1, padx=10, pady=10, sticky='w')
+
+    # Hover-Effekte für das Depot-Distanz Eingabefeld hinzufügen
+    add_hover_effect(entry_depot_distance, hover_bg="#505050", normal_bg="#404040")
+
     # Button zum Starten der Bodenaushub-Berechnung
     frame_berechnung = tk.Frame(tab2, bg="#213563")
-    frame_berechnung.place(x=150.0, y=320.0, width=900.0, height=80.0)  # Angepasste Position
+    frame_berechnung.place(x=150.0, y=370.0, width=900.0, height=80.0)  # Angepasste Position
 
     button_start_berechnung = tk.Button(
         frame_berechnung,
@@ -342,8 +380,8 @@ def main():
         command=lambda: start_bodenaushub(
             zustand0_file_var,
             zustand1_file_var,
-            blender_executable,
-            open_stl_script,
+            cell_size_var,
+            depot_distance_var,
             label_min_work
         ),
         relief="flat",
@@ -361,21 +399,243 @@ def main():
     # Label zur Anzeige der minimalen Arbeit
     label_min_work = tk.Label(
         tab2,
-        text="Minimale Arbeit: N/A",
+        text="Minimale Arbeit: zu berechnen...",
         bg="#213563",
+        fg="#FFFFFF",
+        font=("Arial", 18)
+    )
+    label_min_work.place(x=150.0, y=470.0)  # Angepasste Position
+
+    # --- Inhalte für Tab 3 (Property-Filter) --- #
+    # Canvas erstellen mit blauer Hintergrundfarbe und dynamischer Größe
+    canvas3 = tk.Canvas(
+        tab3,
+        bg="#213563",  # Setze den Hintergrund auf Blau
+        bd=0,
+        highlightthickness=0,
+        relief="ridge"
+    )
+    canvas3.pack(fill='both', expand=True)
+
+    # Titeltext
+    canvas3.create_text(
+        150.0,
+        50.0,
+        anchor="nw",
+        text="Filter nach Property Sets",
+        fill="#FFFFFF",
+        font=("Arial", 28, "bold")
+    )
+
+    # Hauptframe für die IFC-Datei-Auswahl
+    frame_ifc_2 = tk.Frame(tab3, bg="#213563")
+    frame_ifc_2.place(x=150.0, y=100.0, width=900.0, height=48.0)  # Höhe auf 48.0 angepasst
+
+    # Label für Input IFC-Datei
+    label_ifc_2 = tk.Label(
+        frame_ifc_2,
+        text="Input IFC-Datei:",
+        bg="#213563",
+        fg="#FFFFFF",
+        font=("Arial", 22)
+    )
+    label_ifc_2.pack(side="left", padx=(0, 10), pady=0)
+
+    # Button zur Auswahl der IFC-Datei
+    button_input_file_2 = tk.Button(
+        frame_ifc_2,
+        text="   Input IFC-Datei auswählen...",
+        borderwidth=0,
+        highlightthickness=0,
+        command=lambda: select_input_file(button_input_file_2, input_ifc_file_var),
+        relief="flat",
+        fg="#FFFFFF",
+        bg="#404040",
+        justify="left",
+        anchor="w",
+        font=("Arial", 16),
+        padx=10,  # Padding nach rechts
+        pady=5    # Padding nach unten auf 5 angepasst
+    )
+    button_input_file_2.pack(side="left", fill='both', expand=True, padx=(0, 10), pady=0)
+
+    # Hover-Effekte für den Input-Datei-Button hinzufügen
+    add_hover_effect(button_input_file_2, hover_bg="#505050", normal_bg="#404040")
+
+    # Blender-Icon Button zum Öffnen der IFC-Datei in Blender
+    button_open_input_blender_2 = tk.Button(
+        frame_ifc_2,
+        image=blender_icon,
+        borderwidth=0,
+        highlightthickness=0,
+        command=lambda: on_open_input_in_blender(
+            input_ifc_file_var.get(),
+            blender_executable,
+            open_ifc_script
+        ),
+        relief="flat",
+        bg="#213563",
+        width=48,
+        height=48
+    )
+    button_open_input_blender_2.pack(side="left", padx=(10, 0), pady=0)
+
+    # Hover-Effekte für das Blender-Icon hinzufügen
+    add_hover_effect(button_open_input_blender_2, hover_image=blender_icon_hover, normal_image=blender_icon)
+
+    # --- Eingabefelder für Filterkriterien --- #
+    frame_filters = tk.Frame(tab3, bg="#213563")
+    frame_filters.place(x=150.0, y=180.0, width=900.0, height=150.0)  # Angepasste Position und Größe
+
+    # Label und Eingabefeld für Property Sets
+    label_property_sets = tk.Label(
+        frame_filters,
+        text="Property Sets (Kommagetrennt):",
+        bg="#213563",
+        fg="#FFFFFF",
+        font=("Arial", 18)
+    )
+    label_property_sets.grid(row=0, column=0, padx=10, pady=10, sticky='w')
+
+    entry_property_sets = tk.Entry(
+        frame_filters,
+        width=50,
+        bg="#404040",
         fg="#FFFFFF",
         font=("Arial", 16)
     )
-    label_min_work.place(x=150.0, y=420.0)  # Angepasste Position
+    entry_property_sets.grid(row=0, column=1, padx=10, pady=10, sticky='w')
 
-    # --- Inhalte für Tab 3 (Property-Filter) --- #
-    label_tab3 = tk.Label(tab3, text="Filter nach Property Sets", font=("Arial", 22))
-    label_tab3.pack(pady=20)
-    # Weitere Widgets hinzufügen
+    # Hover-Effekte für das Property Sets Eingabefeld hinzufügen
+    add_hover_effect(entry_property_sets, hover_bg="#505050", normal_bg="#404040")
+
+    # Label und Eingabefeld für einzelne Properties
+    label_single_properties = tk.Label(
+        frame_filters,
+        text="Einzelne Properties (Kommagetrennt):",
+        bg="#213563",
+        fg="#FFFFFF",
+        font=("Arial", 18)
+    )
+    label_single_properties.grid(row=1, column=0, padx=10, pady=10, sticky='w')
+
+    entry_single_properties = tk.Entry(
+        frame_filters,
+        width=50,
+        bg="#404040",
+        fg="#FFFFFF",
+        font=("Arial", 16)
+    )
+    entry_single_properties.grid(row=1, column=1, padx=10, pady=10, sticky='w')
+
+    # Hover-Effekte für das einzelne Properties Eingabefeld hinzufügen
+    add_hover_effect(entry_single_properties, hover_bg="#505050", normal_bg="#404040")
+
+    # --- Eingabefelder für Farbe und Transparenz --- #
+    frame_colour_transparency = tk.Frame(tab3, bg="#213563")
+    frame_colour_transparency.place(x=150.0, y=500.0, width=900.0, height=100.0)  # Angepasste Position und Größe
+
+    # Label und Eingabefeld für Farbe
+    label_colour = tk.Label(
+        frame_colour_transparency,
+        text="Farbe (R,G,B):",
+        bg="#213563",
+        fg="#FFFFFF",
+        font=("Arial", 18)
+    )
+    label_colour.grid(row=0, column=0, padx=10, pady=10, sticky='w')
+
+    entry_colour = tk.Entry(
+        frame_colour_transparency,
+        width=20,
+        bg="#404040",
+        fg="#FFFFFF",
+        font=("Arial", 16)
+    )
+    entry_colour.grid(row=0, column=1, padx=10, pady=10, sticky='w')
+    entry_colour.insert(0, "255,0,0")  # Standardfarbe Rot
+
+    # Hover-Effekte für das Farbe-Eingabefeld hinzufügen
+    add_hover_effect(entry_colour, hover_bg="#505050", normal_bg="#404040")
+
+    # Button für Farbwahl (Colour Picker) hinzufügen
+    button_choose_colour = tk.Button(
+        frame_colour_transparency,
+        text="Farbe wählen",
+        command=lambda: choose_colour(entry_colour),
+        bg="#404040",
+        fg="#FFFFFF",
+        font=("Arial", 12),
+        padx=10,
+        pady=5
+    )
+    button_choose_colour.grid(row=0, column=2, padx=10, pady=10, sticky='w')
+
+    # Label und Eingabefeld für Transparenz
+    label_transparency = tk.Label(
+        frame_colour_transparency,
+        text="Transparenz (0.0 - 1.0):",
+        bg="#213563",
+        fg="#FFFFFF",
+        font=("Arial", 18)
+    )
+    label_transparency.grid(row=1, column=0, padx=10, pady=10, sticky='w')
+
+    entry_transparency = tk.Entry(
+        frame_colour_transparency,
+        width=10,
+        bg="#404040",
+        fg="#FFFFFF",
+        font=("Arial", 16)
+    )
+    entry_transparency.grid(row=1, column=1, padx=10, pady=10, sticky='w')
+    entry_transparency.insert(0, "0.0")  # Standardtransparenz
+
+    # Hover-Effekte für das Transparenz-Eingabefeld hinzufügen
+    add_hover_effect(entry_transparency, hover_bg="#505050", normal_bg="#404040")
+
+    # Transparenz-Slider hinzufügen
+    scale_transparency = ttk.Scale(
+        frame_colour_transparency,
+        from_=0.0,
+        to=1.0,
+        orient='horizontal',
+        command=lambda val: update_transparency_entry(entry_transparency, val),
+        value=0.0,
+        length=200
+    )
+    scale_transparency.grid(row=1, column=2, padx=10, pady=10, sticky='w')
+
+    # --- Button zum Starten des Filters --- #
+    frame_filter_button = tk.Frame(tab3, bg="#213563")
+    frame_filter_button.place(x=150.0, y=350.0, width=900.0, height=80.0)  # Angepasste Position
+
+    button_start_filter = tk.Button(
+        frame_filter_button,
+        text="   Filter anwenden und in Blender öffnen",
+        borderwidth=0,
+        highlightthickness=0,
+        command=lambda: apply_property_filter(
+            input_ifc_file_var.get(),
+            entry_property_sets.get(),
+            entry_single_properties.get(),
+            entry_colour.get(),
+            entry_transparency.get(),
+            blender_executable,
+            open_ifc_script
+        ),
+        relief="flat",
+        fg="#FFFFFF",
+        bg="#404040",
+        font=("Arial", 22, 'bold'),
+        padx=10,
+        pady=10
+    )
+    button_start_filter.pack(side="left", fill="both", expand=True, padx=(0, 0), pady=10)
+
+    # Hover-Effekte für den Start-Filter Button hinzufügen
+    add_hover_effect(button_start_filter, hover_bg="#505050", normal_bg="#404040")
 
     window.resizable(True, True)  # Ermögliche Fensteranpassung für größere Inhalte
     window.mainloop()
 
-
-if __name__ == "__main__":
-    main()

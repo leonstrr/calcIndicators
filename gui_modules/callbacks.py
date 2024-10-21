@@ -1,18 +1,12 @@
-# gui_modules/callbacks.py
-
-import os
 from pathlib import Path
-import tkinter as tk
 from tkinter import filedialog, messagebox
 import ast
 
-from gui_modules.gui_helpers import (
-    open_in_blender,
-    open_stl_in_blender,
-    generate_output_file_path
-)
+from gui_modules.gui_helpers import open_in_blender, open_stl_in_blender
 from modules.bodenaushub import perform_bodenaushub, visualize_results
 from modules.lichtraumprofil import create_lrp_and_perform_clash_detection
+from utils.helpers import generate_output_file_path, create_colour_assignment  # Allgemeine Funktionen importieren
+from modules.property_filter import filter_properties  # Importiere die filter_properties-Funktion
 
 def on_open_input_in_blender(input_ifc_file, blender_executable, open_ifc_script):
     """Öffnet eine IFC-Datei in Blender."""
@@ -22,7 +16,7 @@ def on_open_input_in_blender(input_ifc_file, blender_executable, open_ifc_script
         return
     open_in_blender(input_ifc_file, blender_executable, open_ifc_script)
 
-def select_input_file(button_input_file, input_ifc_file_var, zustand0_file_var, zustand1_file_var):
+def select_input_file(button_input_file, input_ifc_file_var):
     """Öffnet einen Dateidialog zum Auswählen der IFC-Datei."""
     print("select_input_file aufgerufen")
     file_path = filedialog.askopenfilename(
@@ -89,40 +83,81 @@ def open_specific_stl_in_blender(stl_file_var, blender_executable, open_stl_scri
         return
     open_stl_in_blender([stl_file], blender_executable, open_stl_script)
 
-def start_bodenaushub(zustand0_file_var, zustand1_file_var, blender_executable, open_stl_script, label_min_work):
-    """Startet die Bodenaushub-Berechnung."""
-    print("start_bodenaushub aufgerufen")
-    if not zustand0_file_var.get() or not zustand1_file_var.get():
-        messagebox.showwarning("Warnung", "Bitte beide STL-Dateien auswählen.")
+def start_bodenaushub(zustand0_file_var, zustand1_file_var, cell_size_var, depot_distance_var, label_min_work):
+    zustand0_file = zustand0_file_var.get()
+    zustand1_file = zustand1_file_var.get()
+    cell_size = cell_size_var.get()
+    depot_distance = depot_distance_var.get()
+
+    if not zustand0_file or not zustand1_file:
+        messagebox.showerror("Fehler", "Bitte wähle beide STL-Dateien aus.")
+        return
+
+    # Führe die Bodenaushub-Berechnung durch
+    results = perform_bodenaushub(zustand0_file, zustand1_file, cell_size=cell_size, depot_distance=depot_distance)
+
+    # Aktualisiere das Label mit der minimalen Arbeit
+    min_work = results['min_work']
+    label_min_work.config(text=f"Minimale Arbeit: {min_work:.2f} m³·m")
+
+    # Visualisiere die Ergebnisse
+    visualize_results(
+        results['bounding_box'],
+        results['triangles_mesh0'],
+        results['triangles_mesh1'],  # Übergib Mesh1
+        results['volume_df'],
+        results['middle_point']
+    )
+
+def apply_property_filter(ifc_file, property_sets, single_properties, colour, transparency, blender_executable, open_ifc_script):
+    """
+    Führt den Property-Filter durch und öffnet das Ergebnis in Blender.
+
+    :param ifc_file: Pfad zur IFC-Datei
+    :param property_sets: Kommagetrennte Liste von Property Sets
+    :param single_properties: Kommagetrennte Liste von einzelnen Properties
+    :param blender_executable: Pfad zur Blender-Executable
+    :param open_ifc_script: Pfad zum Blender-Skript zum Öffnen der IFC-Datei
+    """
+    print("apply_property_filter aufgerufen")
+    if not ifc_file:
+        messagebox.showerror("Fehler", "Bitte eine IFC-Datei auswählen.")
+        return
+
+    if not property_sets and not single_properties:
+        messagebox.showwarning("Warnung", "Bitte mindestens ein Filterkriterium eingeben.")
         return
     try:
-        # Führe die Bodenaushub-Berechnung durch
-        results = perform_bodenaushub(zustand0_file_var.get(), zustand1_file_var.get())
-        min_work = results['min_work']
-        print(f"Bodenaushub-Berechnung abgeschlossen. Minimale Arbeit: {min_work}")
+        colour_rgb = tuple(map(int, colour.split(',')))
+        if len(colour_rgb) != 3 or not all(0 <= val <= 255 for val in colour_rgb):
+            raise ValueError
+    except ValueError:
+        messagebox.showerror("Fehler", "Die Farbe muss im Format R,G,B angegeben werden, wobei R, G und B Zahlen zwischen 0 und 255 sind.")
+        return
+    try:
+        transparency_val = float(transparency)
+        if not (0.0 <= transparency_val <= 1.0):
+            raise ValueError
+    except ValueError:
+        messagebox.showerror("Fehler", "Der Transparenzwert muss eine Zahl zwischen 0.0 und 1.0 sein.")
+        return
 
-        # Anzeige des minimalen Arbeitsergebnisses
-        label_min_work.config(text=f"Minimale Arbeit: {min_work:.2f} m³·m")
-        print(f"Minimale Arbeit angezeigt: {min_work:.2f} m³·m")
+    # Verarbeite die Eingaben in Listen
+    property_sets_list = [ps.strip() for ps in property_sets.split(",")] if property_sets else []
+    single_properties_list = [sp.strip() for sp in single_properties.split(",")] if single_properties else []
 
-        # Visualisierungen extern anzeigen
-        visualize_results(
-            bounding_box=results['bounding_box'],
-            triangles_mesh0=results['triangles_mesh0'],
-            volume_df=results['volume_df'],
-            middle_point=results['middle_point']
+    try:
+        # Führe den Filterprozess durch
+        filtered_ifc_file = filter_properties(
+            ifc_file,
+            property_sets_list,
+            single_properties_list,
+            colour_rgb=colour_rgb,
+            transparency=transparency_val
         )
-        print("Visualisierungen erstellt.")
+        # Öffne die gefilterte IFC-Datei in Blender
+        open_in_blender(filtered_ifc_file, blender_executable, open_ifc_script)
 
-        # Importiere die ausgewählten STL-Dateien in Blender
-        open_stl_in_blender(
-            [zustand0_file_var.get(), zustand1_file_var.get()],
-            blender_executable,
-            open_stl_script
-        )
-        print("STL-Dateien in Blender importiert.")
-
-        messagebox.showinfo("Erfolg",
-                            "Bodenaushub-Berechnung erfolgreich abgeschlossen und STL-Dateien in Blender importiert.")
     except Exception as e:
-        messagebox.showerror("Fehler", f"Fehler bei der Bodenaushub-Berechnung:\n{e}")
+        messagebox.showerror("Fehler", f"Beim Anwenden des Filters ist ein Fehler aufgetreten:\n{e}")
+
