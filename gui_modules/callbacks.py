@@ -5,7 +5,7 @@ import ast
 from gui_modules.gui_helpers import open_in_blender, open_stl_in_blender
 from modules.bodenaushub import perform_bodenaushub, visualize_results
 from modules.lichtraumprofil import create_lrp_and_perform_clash_detection
-from utils.helpers import generate_output_file_path, create_colour_assignment  # Allgemeine Funktionen importieren
+from utils.helpers import generate_output_file_path  # Allgemeine Funktionen importieren
 from modules.property_filter import filter_properties  # Importiere die filter_properties-Funktion
 
 def on_open_input_in_blender(input_ifc_file, blender_executable, open_ifc_script):
@@ -15,7 +15,6 @@ def on_open_input_in_blender(input_ifc_file, blender_executable, open_ifc_script
         messagebox.showwarning("Warnung", "Bitte zuerst eine Input IFC-Datei auswählen.")
         return
     open_in_blender(input_ifc_file, blender_executable, open_ifc_script)
-
 def select_input_file(button_input_file, input_ifc_file_var):
     """Öffnet einen Dateidialog zum Auswählen der IFC-Datei."""
     print("select_input_file aufgerufen")
@@ -27,7 +26,6 @@ def select_input_file(button_input_file, input_ifc_file_var):
         input_ifc_file_var.set(file_path)
         button_input_file.config(text=f"   Input IFC: {Path(file_path).name}")
         print(f"Input IFC-Datei ausgewählt: {file_path}")
-
 def on_create_lrp_and_clash_detection(entry_1, input_ifc_file, blender_executable, open_ifc_script):
     """Erstellt das Lichtraumprofil und führt Clash Detection durch."""
     print("on_create_lrp_and_clash_detection aufgerufen")
@@ -56,7 +54,6 @@ def on_create_lrp_and_clash_detection(entry_1, input_ifc_file, blender_executabl
         open_in_blender(output_ifc_file, blender_executable, open_ifc_script)  # Öffne die neue IFC-Datei in Blender
     except Exception as e:
         messagebox.showerror("Fehler", f"Fehler bei der Verarbeitung: {e}")
-
 def select_stl_file(button, var_name, zustand0_file_var, zustand1_file_var):
     """Öffnet einen Dateidialog zum Auswählen der STL-Datei."""
     print(f"select_stl_file aufgerufen für: {var_name}")
@@ -73,7 +70,6 @@ def select_stl_file(button, var_name, zustand0_file_var, zustand1_file_var):
             zustand1_file_var.set(file_path)
             button.config(text=f"   STL-Zustand 1: {Path(file_path).name}")
             print(f"STL-Zustand 1 ausgewählt: {file_path}")
-
 def open_specific_stl_in_blender(stl_file_var, blender_executable, open_stl_script):
     """Öffnet eine spezifische STL-Datei in Blender."""
     stl_file = stl_file_var.get()
@@ -82,8 +78,7 @@ def open_specific_stl_in_blender(stl_file_var, blender_executable, open_stl_scri
         messagebox.showwarning("Warnung", "Bitte zuerst eine STL-Datei auswählen.")
         return
     open_stl_in_blender([stl_file], blender_executable, open_stl_script)
-
-def start_bodenaushub(zustand0_file_var, zustand1_file_var, cell_size_var, depot_distance_var, label_min_work):
+def start_bodenaushub(zustand0_file_var, zustand1_file_var, cell_size_var, depot_distance_var, label_volume, label_work):
     zustand0_file = zustand0_file_var.get()
     zustand1_file = zustand1_file_var.get()
     cell_size = cell_size_var.get()
@@ -94,28 +89,34 @@ def start_bodenaushub(zustand0_file_var, zustand1_file_var, cell_size_var, depot
         return
 
     # Führe die Bodenaushub-Berechnung durch
-    results = perform_bodenaushub(zustand0_file, zustand1_file, cell_size=cell_size, depot_distance=depot_distance)
+    results = perform_bodenaushub(zustand0_file, zustand1_file, depot_distance=depot_distance, cell_size=cell_size)
 
-    # Aktualisiere das Label mit der minimalen Arbeit
-    min_work = results['min_work']
-    label_min_work.config(text=f"Minimale Arbeit: {min_work:.2f} m³·m")
+    # Aktualisiere die Label
+    total_excess = results['total_excess']
+    total_deficit = results['total_deficit']
+    total_difference = results['total_difference']
+
+    min_work = results['total_costs']
+    min_work_external = results['depot_costs']
+
+    label_volume.config(text=f"Überschüsse: {total_excess:.2f} m³, Defizite: {total_deficit:.2f} m³, Differenz gesamt: {total_difference:.2f} m³")
+    label_work.config(text=f"Minimale Arbeit (gesamt): {min_work:.2f} m³·m, davon {min_work_external:.2f} m³·m von/zur Deponie")
 
     # Visualisiere die Ergebnisse
     visualize_results(
         results['bounding_box'],
-        results['triangles_mesh0'],
-        results['triangles_mesh1'],  # Übergib Mesh1
-        results['volume_df'],
-        results['middle_point']
+        results['raster_points'],
+        results['triangles_set'],
+        results['point_df'],
     )
-
-def apply_property_filter(ifc_file, property_sets, single_properties, colour, transparency, blender_executable, open_ifc_script):
+def apply_property_filter(ifc_file, conditions_input, colour, transparency, blender_executable, open_ifc_script):
     """
     Führt den Property-Filter durch und öffnet das Ergebnis in Blender.
 
     :param ifc_file: Pfad zur IFC-Datei
-    :param property_sets: Kommagetrennte Liste von Property Sets
-    :param single_properties: Kommagetrennte Liste von einzelnen Properties
+    :param conditions_input: Eingabe aus dem Text-Widget (mehrzeiliger String)
+    :param colour: Farbe rgb
+    :param transparency: Transparenz [0..1]
     :param blender_executable: Pfad zur Blender-Executable
     :param open_ifc_script: Pfad zum Blender-Skript zum Öffnen der IFC-Datei
     """
@@ -124,9 +125,16 @@ def apply_property_filter(ifc_file, property_sets, single_properties, colour, tr
         messagebox.showerror("Fehler", "Bitte eine IFC-Datei auswählen.")
         return
 
-    if not property_sets and not single_properties:
-        messagebox.showwarning("Warnung", "Bitte mindestens ein Filterkriterium eingeben.")
+    # Entfernen des Beispieltexts und Überprüfung der Eingabe
+    conditions_input = conditions_input.strip()
+    example_conditions = "Beispiel:\nPset_WallCommon.FireRating=30min\nPset_DoorCommon.IsExternal=True"
+    if conditions_input == example_conditions or not conditions_input:
+        messagebox.showwarning("Warnung", "Bitte mindestens eine gültige Filterbedingung eingeben.")
         return
+
+    # Bedingungen in eine Liste von Strings umwandeln
+    conditions = [cond.strip() for cond in conditions_input.split('\n') if cond.strip()]
+
     try:
         colour_rgb = tuple(map(int, colour.split(',')))
         if len(colour_rgb) != 3 or not all(0 <= val <= 255 for val in colour_rgb):
@@ -142,16 +150,35 @@ def apply_property_filter(ifc_file, property_sets, single_properties, colour, tr
         messagebox.showerror("Fehler", "Der Transparenzwert muss eine Zahl zwischen 0.0 und 1.0 sein.")
         return
 
-    # Verarbeite die Eingaben in Listen
-    property_sets_list = [ps.strip() for ps in property_sets.split(",")] if property_sets else []
-    single_properties_list = [sp.strip() for sp in single_properties.split(",")] if single_properties else []
+    # Verarbeite die Bedingungen in eine Liste von Dictionaries
+    property_conditions = []
+    for condition_str in conditions:
+        condition_str = condition_str.strip()
+        if not condition_str:
+            continue
+        condition = {'property_set': None, 'property': None, 'value': None}
+        try:
+            if '=' in condition_str:
+                lhs, value = condition_str.split('=', 1)
+                condition['value'] = value.strip()
+            else:
+                lhs = condition_str
+            if '.' in lhs:
+                pset_name, prop_name = lhs.split('.', 1)
+                condition['property_set'] = pset_name.strip()
+                condition['property'] = prop_name.strip()
+            else:
+                condition['property_set'] = lhs.strip()
+            property_conditions.append(condition)
+        except ValueError:
+            messagebox.showerror("Fehler", f"Ungültiges Bedingungsformat: {condition_str}\nVerwenden Sie das Format 'PropertySet.Property=Value', 'PropertySet.Property' oder 'PropertySet'.")
+            return
 
     try:
         # Führe den Filterprozess durch
         filtered_ifc_file = filter_properties(
             ifc_file,
-            property_sets_list,
-            single_properties_list,
+            property_conditions,
             colour_rgb=colour_rgb,
             transparency=transparency_val
         )
@@ -160,4 +187,8 @@ def apply_property_filter(ifc_file, property_sets, single_properties, colour, tr
 
     except Exception as e:
         messagebox.showerror("Fehler", f"Beim Anwenden des Filters ist ein Fehler aufgetreten:\n{e}")
+
+
+
+
 

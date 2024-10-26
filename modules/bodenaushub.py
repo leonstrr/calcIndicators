@@ -1,284 +1,356 @@
+# bodenaushub.py
 import numpy as np
 import pandas as pd
+import pulp
+from scipy.spatial.distance import cdist
 from stl import mesh
+import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from matplotlib.patches import Polygon
-import pulp
+from matplotlib.colors import LinearSegmentedColormap
+
 import tkinter as tk
 
-def calculate_overall_bounding_box(triangles_list, padding=0.0):
+# --- Funktionen zur Berechnung der Volumen (-differenzen) des Rasters --- #
+def load_stl_files(file_0, file_1):
     """
-    Berechnet die Bounding Box, die alle gegebenen Dreiecksarrays umfasst.
+    Lädt zwei STL-Dateien und gibt die Dreiecksarrays zurück.
 
-    :param triangles_list: Liste von Dreiecksarrays (numpy.ndarray)
-    :param padding: Optionales Padding, um die Bounding Box zu erweitern
-    :return: Dictionary mit min_x, max_x, min_y, max_y
+    :param file_0: Pfad zur ersten STL-Datei
+    :param file_1: Pfad zur zweiten STL-Datei
+    :return: Dreiecksarrays von beiden STL-Dateien
     """
-    all_x = np.concatenate([triangles[:, :, 0].flatten() for triangles in triangles_list])
-    all_y = np.concatenate([triangles[:, :, 1].flatten() for triangles in triangles_list])
+    mesh0 = mesh.Mesh.from_file(file_0)
+    mesh1 = mesh.Mesh.from_file(file_1)
 
-    min_x = np.min(all_x) - padding
-    max_x = np.max(all_x) + padding
-    min_y = np.min(all_y) - padding
-    max_y = np.max(all_y) + padding
+    triangles_0 = mesh0.vectors
+    triangles_1 = mesh1.vectors
 
-    return {
-        "min_x": float(min_x),
-        "max_x": float(max_x),
-        "min_y": float(min_y),
-        "max_y": float(max_y)
+    triangles_set = [triangles_0, triangles_1]
+
+    print("STL-Dateien geladen:")
+    print(f"Zustand 0: {file_0}, Anzahl Dreiecke: {len(triangles_0)}")
+    print(f"Zustand 1: {file_1}, Anzahl Dreiecke: {len(triangles_1)}")
+
+    return triangles_set
+def calculate_bounding_box(triangles_set):
+    # Extrahiere alle x- und y-Werte aus den Dreiecksarrays
+    all_x = [triangles[:, :, 0].flatten() for triangles in triangles_set]
+    all_y = [triangles[:, :, 1].flatten() for triangles in triangles_set]
+
+    # Berechne die Maxima und Minima für jedes Modell
+    min_x_list = [np.min(x) for x in all_x]
+    max_x_list = [np.max(x) for x in all_x]
+    min_y_list = [np.min(y) for y in all_y]
+    max_y_list = [np.max(y) for y in all_y]
+
+    # Berechne die überlappende Bounding Box
+    min_x = max(min_x_list)
+    max_x = min(max_x_list)
+    min_y = max(min_y_list)
+    max_y = min(max_y_list)
+
+    bounding_box = {
+        "min_x": min_x,
+        "max_x": max_x,
+        "min_y": min_y,
+        "max_y": max_y
     }
-def create_raster(bounding_box, cell_size=1.0):
-    x_coords = np.arange(bounding_box["min_x"], bounding_box["max_x"] + cell_size, cell_size)
-    y_coords = np.arange(bounding_box["min_y"], bounding_box["max_y"] + cell_size, cell_size)
-    raster_points = np.array([(x, y) for x in x_coords for y in y_coords])
-    return raster_points
-def point_in_triangle(x, y, triangle, epsilon=1e-6):
-    a, b, c = triangle[0], triangle[1], triangle[2]
-    v0 = (c[0] - a[0], c[1] - a[1])
-    v1 = (b[0] - a[0], b[1] - a[1])
-    v2 = (x - a[0], y - a[1])
-    dot00 = v0[0] * v0[0] + v0[1] * v0[1]
-    dot01 = v0[0] * v1[0] + v0[1] * v1[1]
-    dot02 = v0[0] * v2[0] + v0[1] * v2[1]
-    dot11 = v1[0] * v1[0] + v1[1] * v1[1]
-    dot12 = v1[0] * v2[0] + v1[1] * v2[1]
-    inv_denom = 1 / (dot00 * dot11 - dot01 * dot01)
-    u = (dot11 * dot02 - dot01 * dot12) * inv_denom
-    v = (dot00 * dot12 - dot01 * dot02) * inv_denom
-    return (u >= -epsilon) and (v >= -epsilon) and (u + v <= 1 + epsilon)
-def barycentric_interpolation(x, y, triangle):
-    a, b, c = triangle[0], triangle[1], triangle[2]
-    v0 = (c[0] - a[0], c[1] - a[1])
-    v1 = (b[0] - a[0], b[1] - a[1])
-    v2 = (x - a[0], y - a[1])
-    dot00 = v0[0] * v0[0] + v0[1] * v0[1]
-    dot01 = v0[0] * v1[0] + v0[1] * v1[1]
-    dot02 = v0[0] * v2[0] + v0[1] * v2[1]
-    dot11 = v1[0] * v1[0] + v1[1] * v1[1]
-    dot12 = v1[0] * v2[0] + v1[1] * v2[1]
-    inv_denom = 1 / (dot00 * dot11 - dot01 * dot01)
-    u = (dot11 * dot02 - dot01 * dot12) * inv_denom
-    v = (dot00 * dot12 - dot01 * dot02) * inv_denom
-    z = a[2] + u * (b[2] - a[2]) + v * (c[2] - a[2])
-    return z
-def interpolate_height(point, triangles):
-    x, y = point
-    for triangle in triangles:
-        if point_in_triangle(x, y, triangle):
-            return barycentric_interpolation(x, y, triangle)
-    return None
-def calculate_discrete_volume_difference(triangles_0, triangles_1, raster_points, cell_size=1.0):
-    volume_data = []
-    for point in raster_points:
-        z_0 = interpolate_height(point, triangles_0)
-        z_1 = interpolate_height(point, triangles_1)
-        if z_0 is not None and z_1 is not None:
-            volume_difference = (z_1 - z_0) * (cell_size ** 2)
-            volume_data.append({'x': point[0], 'y': point[1], 'volumen_diff': volume_difference})
-    return pd.DataFrame(volume_data)
-def classify_points(volume_data):
-    excess_points = volume_data[volume_data['volumen_diff'] > 0]
-    deficit_points = volume_data[volume_data['volumen_diff'] < 0]
-    return excess_points[['x', 'y', 'volumen_diff']].values, deficit_points[['x', 'y', 'volumen_diff']].values
-def calculate_distance_matrix(excess_points, deficit_points):
-    distance_matrix = np.zeros((len(excess_points), len(deficit_points)))
-    for i, excess in enumerate(excess_points):
-        for j, deficit in enumerate(deficit_points):
-            distance_matrix[i, j] = np.sqrt((excess[0] - deficit[0]) ** 2 + (excess[1] - deficit[1]) ** 2)
-    return distance_matrix
-def solve_unbalanced_transport_problem(excess_points, deficit_points, distance_matrix, depot_distance=50):
-    """
-    Löst ein unbalanciertes Transportproblem mit PuLP unter Berücksichtigung einer festen Distanz zur Deponie.
-    - excess_points: Numpy-Array mit Überschusspunkten (x, y, volumen_diff).
-    - deficit_points: Numpy-Array mit Defizitpunkten (x, y, volumen_diff).
-    - distance_matrix: Distanzmatrix zwischen Überschusspunkten und Defizitpunkten.
-    - depot_distance: Feste Distanz zur Deponie (z.B. 50 km).
-    """
-    total_excess = excess_points[:, 2].sum()
-    total_deficit = -deficit_points[:, 2].sum()
+    print("Überlappende Bounding Box:", bounding_box)
+    return bounding_box
+def create_raster(bounding_box, cell_size):
+    min_x = bounding_box["min_x"]
+    max_x = bounding_box["max_x"]
+    min_y = bounding_box["min_y"]
+    max_y = bounding_box["max_y"]
 
-    # Initialisiere das LP-Problem
+    # Berechne die Anzahl der Zellen pro Richtung
+    num_cells_x = int(np.ceil((max_x - min_x) / cell_size))
+    num_cells_y = int(np.ceil((max_y - min_y) / cell_size))
+
+    # Anpassung des Maximalwerts, um die Rasterung abzudecken
+    adjusted_max_x = min_x + num_cells_x * cell_size
+    adjusted_max_y = min_y + num_cells_y * cell_size
+
+    x_coords = np.linspace(min_x + cell_size / 2, adjusted_max_x - cell_size / 2, num_cells_x)
+    y_coords = np.linspace(min_y + cell_size / 2, adjusted_max_y - cell_size / 2, num_cells_y)
+
+    xv, yv = np.meshgrid(x_coords, y_coords)
+    raster_points = np.column_stack([xv.ravel(), yv.ravel()])
+
+    return raster_points
+def interpolate_height_for_points(raster_points, triangles_set, epsilon=1e-6):
+    """
+    Prüft für eine Liste von Punkten (x, y), ob diese in einem der Dreiecke eines jeden Dreieckssatzes liegt,
+    und berechnet dann die Höhen (z0, z1, ...) mittels baryzentrischer Interpolation.
+
+    :param raster_points: Liste von Tupeln (x, y) für die Interpolation
+    :param triangles_set: Liste von Dreieckssätzen (jeder Dreieckssatz ist eine Liste von Dreiecken)
+    :param epsilon: Toleranzwert für numerische Stabilität
+    :return: Pandas-DataFrame mit x, y und z-Werten für jeden Dreieckssatz
+    """
+    point_data = []
+    for p in raster_points:
+        point_entry = {'x': p[0], 'y': p[1]}
+        for idx, triangles in enumerate(triangles_set):
+            z = None
+            for triangle in triangles:
+                a, b, c = triangle
+                ab = (b[0] - a[0], b[1] - a[1])
+                ac = (c[0] - a[0], c[1] - a[1])
+
+                A_ges = 0.5 * abs(ab[0] * ac[1] - ab[1] * ac[0])
+                if A_ges == 0:
+                    continue  # Degeneriertes Dreieck
+
+                A1 = 0.5 * abs((b[0] - p[0]) * (c[1] - p[1]) - (b[1] - p[1]) * (c[0] - p[0]))
+                A2 = 0.5 * abs((a[0] - p[0]) * (c[1] - p[1]) - (a[1] - p[1]) * (c[0] - p[0]))
+                A3 = 0.5 * abs((a[0] - p[0]) * (b[1] - p[1]) - (a[1] - p[1]) * (b[0] - p[0]))
+
+                w1 = A1 / A_ges
+                w2 = A2 / A_ges
+                w3 = A3 / A_ges
+
+                # Prüfen, ob der Punkt innerhalb des Dreiecks liegt
+                if (w1 >= -epsilon) and (w2 >= -epsilon) and (w3 >= -epsilon) and (w1 + w2 + w3 <= 1 + epsilon):
+                    # Interpolation der Höhe
+                    z = a[2] + w2 * (b[2] - a[2]) + w3 * (c[2] - a[2])
+                    break  # Höhenwert gefunden
+            point_entry[f'z{idx}'] = z
+        point_data.append(point_entry)
+    return pd.DataFrame(point_data)
+def calculate_discrete_volume_difference(point_df, cell_size):
+    """
+    Berechnet die Volumendifferenz zwischen zwei Höhenmodellen anhand der interpolierten Höhenwerte in point_df.
+    Fügt eine Spalte hinzu, die angibt, ob der Punkt ein Überschuss oder ein Defizit ist.
+
+    :param point_df: Pandas DataFrame mit x, y, z0, z1 (interpolierte Höhen)
+    :param cell_size: Größe der Zelle (Standard: 1.0)
+    :return: Das gleiche DataFrame mit zusätzlichen Spalten 'volumen_diff' und 'status'
+    """
+    if 'z0' in point_df.columns and 'z1' in point_df.columns:
+        # Berechnung der Volumendifferenz
+        point_df['volumen_diff'] = (point_df['z1'] - point_df['z0']) * (cell_size ** 2)
+
+        # Klassifizierung des Punkts als Überschuss, Defizit oder neutral
+        point_df['status'] = np.where(
+            point_df['volumen_diff'] > 0, 'excess',
+            np.where(point_df['volumen_diff'] < 0, 'deficit', 'neutral')
+        )
+    else:
+        print("Fehlende z0 oder z1 Spalte in DataFrame")
+    return point_df
+
+# --- Funktionen zum Lösen des Transportproblems --- #
+def calculate_distance_matrix(point_df):
+    """
+    Berechnet die Distanzmatrix zwischen Punkten mit Überschuss und Punkten mit Defizit.
+
+    :param point_df: Pandas DataFrame mit Spalten 'x', 'y', 'volumen_diff', 'status'
+    :return: Distanzmatrix als 2D-NumPy-Array, Überschusspunkte, Defizitpunkte
+    """
+    # Extrahieren der Überschuss- und Defizitpunkte
+    excess_df = point_df[point_df['status'] == 'excess'][['x', 'y', 'volumen_diff']]
+    deficit_df = point_df[point_df['status'] == 'deficit'][['x', 'y', 'volumen_diff']]
+
+    excess_points = excess_df[['x', 'y']].values
+    deficit_points = deficit_df[['x', 'y']].values
+
+    # Berechnen der Distanzen mit cdist für Effizienz
+    distance_matrix = cdist(excess_points, deficit_points, metric='euclidean')
+
+    return distance_matrix, excess_df, deficit_df
+def solve_unbalanced_transport_problem(excess_points_df, deficit_points_df, distance_matrix, depot_distance):
+    """
+    Löst ein unbalanciertes Transportproblem mit PuLP, wobei die Deponie nur als Gesamttransportpunkt genutzt wird.
+
+    :param excess_points_df: Pandas DataFrame mit Überschusspunkten (x, y, volumen_diff).
+    :param deficit_points_df: Pandas DataFrame mit Defizitpunkten (x, y, volumen_diff).
+    :param distance_matrix: Distanzmatrix zwischen Überschusspunkten und Defizitpunkten.
+    :param depot_distance: Distanz zur Deponie (z.B. 50 km).
+    :return: Transportplan, Transport zur/von der Deponie, interne Kosten, Depotkosten, LP Problem
+    """
+    # Berechnung der Summen für Überschuss und Defizit
+    total_excess = excess_points_df['volumen_diff'].sum()
+    total_deficit = -deficit_points_df['volumen_diff'].sum()
+    total_difference = total_excess + total_deficit
+
+    # Initialisierung des LP-Problems
     prob = pulp.LpProblem("Unbalanced_Transport_Problem", pulp.LpMinimize)
 
-    num_excess = len(excess_points)
-    num_deficit = len(deficit_points)
+    # Anzahl der Überschuss- und Defizitpunkte
+    num_excess = len(excess_points_df)
+    num_deficit = len(deficit_points_df)
 
-    # Entscheidungsvariablen: Menge, die von Überschusspunkt i zu Defizitpunkt j transportiert wird
-    transport_vars = pulp.LpVariable.dicts("Transport",
-                                           ((i, j) for i in range(num_excess) for j in range(num_deficit)),
-                                           lowBound=0, cat='Continuous')
+    # Entscheidungsvariablen: Transport von Überschusspunkt i zu Defizitpunkt j
+    transport_vars = pulp.LpVariable.dicts(
+        "Transport",
+        ((i, j) for i in range(num_excess) for j in range(num_deficit)),
+        lowBound=0, cat='Continuous'
+    )
 
-    # Entscheidungsvariablen für den Transport zum/zur Depot
-    transport_to_depot = pulp.LpVariable.dicts("ToDepot",
-                                               (i for i in range(num_excess)),
-                                               lowBound=0, cat='Continuous')
-    transport_from_depot = pulp.LpVariable.dicts("FromDepot",
-                                                 (j for j in range(num_deficit)),
-                                                 lowBound=0, cat='Continuous')
+    # Variablen für Gesamtmengen zur/von Deponie
+    to_depot = pulp.LpVariable("ToDepot", lowBound=0, cat='Continuous')
+    from_depot = pulp.LpVariable("FromDepot", lowBound=0, cat='Continuous')
 
-    # Zielfunktion: Minimierung der Transportkosten
+    # **Zielfunktion:** Minimierung der Transportkosten
     prob += (
-            pulp.lpSum([transport_vars[i, j] * distance_matrix[i, j]
-                        for i in range(num_excess) for j in range(num_deficit)]) +
-            pulp.lpSum([transport_to_depot[i] * depot_distance for i in range(num_excess)]) +
-            pulp.lpSum([transport_from_depot[j] * depot_distance for j in range(num_deficit)])
+        pulp.lpSum([transport_vars[i, j] * distance_matrix[i, j]
+                    for i in range(num_excess) for j in range(num_deficit)]) +
+        to_depot * depot_distance + from_depot * depot_distance
     ), "Total_Transport_Cost"
 
-    # Nebenbedingungen: Überschüsse müssen transportiert werden
+    # **Nebenbedingungen für Überschusspunkte**
     for i in range(num_excess):
         prob += (
-            pulp.lpSum([transport_vars[i, j] for j in range(num_deficit)]) +
-            transport_to_depot[i] == excess_points[i, 2],
+            pulp.lpSum([transport_vars[i, j] for j in range(num_deficit)]) + to_depot <= excess_points_df.iloc[i]['volumen_diff'],
             f"ExcessSupply_{i}"
         )
 
-    # Nebenbedingungen: Defizite müssen ausgeglichen werden
+    # **Nebenbedingungen für Defizitpunkte**
     for j in range(num_deficit):
         prob += (
-            pulp.lpSum([transport_vars[i, j] for i in range(num_excess)]) +
-            transport_from_depot[j] == -deficit_points[j, 2],
+            pulp.lpSum([transport_vars[i, j] for i in range(num_excess)]) + from_depot >= -deficit_points_df.iloc[j]['volumen_diff'],
             f"DeficitDemand_{j}"
         )
 
-    # Zielfunktion und Nebenbedingungen sind jetzt balanciert durch die Deponie
-    # Es gibt keinen weiteren Balancing-Knoten
+    # **Deponie-Balancing-Bedingungen:** nur wenn Überschuss oder Defizit bleibt
+    prob += to_depot <= max(0, total_excess - total_deficit), "DepotSupplyCondition"
+    prob += from_depot <= max(0, total_deficit - total_excess), "DepotDemandCondition"
 
-    # Lösen des Problems
+    # **Lösen des Problems**
     prob.solve()
 
-    # Extrahiere den Transportplan
+    # **Transportplan** extrahieren
     transport_plan = np.zeros((num_excess, num_deficit))
     for i in range(num_excess):
         for j in range(num_deficit):
             transport_plan[i, j] = pulp.value(transport_vars[i, j])
 
-    # Extrahiere den Transport zum Depot
-    to_depot = np.array([pulp.value(transport_to_depot[i]) for i in range(num_excess)])
-    from_depot = np.array([pulp.value(transport_from_depot[j]) for j in range(num_deficit)])
+    # **Debugging-Ausgaben** zur Kostenverifizierung
+    to_depot_value = pulp.value(to_depot)
+    from_depot_value = pulp.value(from_depot)
+    depot_costs = to_depot_value * depot_distance + from_depot_value * depot_distance
+    internal_costs = pulp.value(prob.objective) - depot_costs
+    total_costs = pulp.value(prob.objective)
 
-    return transport_plan, to_depot, from_depot, prob
-def perform_bodenaushub(zustand0_file, zustand1_file, depot_distance=50, cell_size = 1.0):
-    # Lade die STL-Dateien
-    mesh0 = mesh.Mesh.from_file(zustand0_file)
-    mesh1 = mesh.Mesh.from_file(zustand1_file)
+    print(f"Gesamtkosten der Zielfunktion: {total_costs:.2f}")
+    print(f"Kosten für Transport zur Deponie: {to_depot_value * depot_distance:.2f}")
+    print(f"Kosten für Transport von der Deponie: {from_depot_value * depot_distance:.2f}")
+    print(f"Berechnete interne Transportkosten: {internal_costs:.2f}")
 
-    # Konvertiere die Meshes zu Dreiecksarrays
-    triangles_0 = mesh0.vectors
-    triangles_1 = mesh1.vectors
+    return transport_plan, to_depot_value, from_depot_value, total_excess,total_deficit, total_difference, depot_costs, internal_costs, total_costs, prob
 
-    # Berechne die Bounding Box für beide Meshes und erstelle das Raster
-    bounding_box = calculate_overall_bounding_box([triangles_0, triangles_1], padding=1.0)
-    raster_points = create_raster(bounding_box, cell_size=cell_size)
-
-    # Führe die Hauptberechnungen durch
-    volume_df, excess_points, deficit_points, distance_matrix, transport_plan, to_depot, from_depot, prob = main(
-        triangles_0, triangles_1, raster_points, depot_distance, cell_size=cell_size
-    )
-
-    # Berechne die minimale Arbeit
-    min_work = pulp.value(prob.objective)
-
-    # Gib die Ergebnisse in einem Dictionary zurück
-    return {
-        'volume_df': volume_df,
-        'excess_points': excess_points,
-        'deficit_points': deficit_points,
-        'distance_matrix': distance_matrix,
-        'transport_plan': transport_plan,
-        'to_depot': to_depot,
-        'from_depot': from_depot,
-        'min_work': min_work,
-        'bounding_box': bounding_box,
-        'triangles_mesh0': triangles_0,
-        'triangles_mesh1': triangles_1,  # Füge Mesh1 hinzu
-        'middle_point': (
-            (bounding_box['min_x'] + bounding_box['max_x']) / 2,
-            (bounding_box['min_y'] + bounding_box['max_y']) / 2
-        )
-    }
-def visualize_mesh_2d(triangles_mesh0, triangles_mesh1, bounding_box):
+# --- Grundfunktionen zur Visualisierung --- #
+def visualize_interpolated_points(point_df):
     """
-    Erstellt eine Matplotlib-Figur mit zwei nebeneinanderliegenden Subplots für die beiden Meshes.
+    Visualisiert die interpolierten Punkte (z0 und z1) in einem 3D-Scatterplot.
 
-    :param triangles_mesh0: Numpy Array der Dreiecke für Mesh Zustand 0
-    :param triangles_mesh1: Numpy Array der Dreiecke für Mesh Zustand 1
-    :param bounding_box: Dictionary mit min_x, max_x, min_y, max_y
-    :return: Matplotlib Figure
+    :param point_df: Pandas-DataFrame mit Spalten 'x', 'y', 'z0', 'z1'
+    :return: Matplotlib Figure Objekt
     """
-    fig = Figure(figsize=(24, 12))
-    ax1 = fig.add_subplot(1, 2, 1)
-    ax2 = fig.add_subplot(1, 2, 2)
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection='3d')
 
-    # Zeichnen von Mesh0 auf ax1
-    for triangle in triangles_mesh0:
-        polygon = Polygon(triangle[:, :2], closed=True, edgecolor='black', facecolor='#009682', alpha=0.5)
-        ax1.add_patch(polygon)
+    # Zustand 0
+    ax.scatter(point_df['x'], point_df['y'], point_df['z0'], c='#009682', label='Zustand 0', s=20)
 
-    ax1.set_xlim(bounding_box['min_x'], bounding_box['max_x'])
-    ax1.set_ylim(bounding_box['min_y'], bounding_box['max_y'])
-    ax1.set_xlabel('x [m]', fontsize=18, fontweight='bold')
-    ax1.set_ylabel('y [m]', fontsize=18, fontweight='bold')
-    ax1.set_title('Projektion in xy, Mesh Zustand 0', fontsize=22, fontweight='bold')
-    ax1.set_aspect('equal')
-    ax1.grid(False)
-
-    # Zeichnen von Mesh1 auf ax2
-    for triangle in triangles_mesh1:
-        polygon = Polygon(triangle[:, :2], closed=True, edgecolor='black', facecolor='#4664aa', alpha=0.5)
-        ax2.add_patch(polygon)
-
-    ax2.set_xlim(bounding_box['min_x'], bounding_box['max_x'])
-    ax2.set_ylim(bounding_box['min_y'], bounding_box['max_y'])
-    ax2.set_xlabel('x [m]', fontsize=18, fontweight='bold')
-    ax2.set_ylabel('y [m]', fontsize=18, fontweight='bold')
-    ax2.set_title('Projektion in xy, Mesh Zustand 1', fontsize=22, fontweight='bold')
-    ax2.set_aspect('equal')
-    ax2.grid(False)
-
-    fig.tight_layout()
-    return fig
-def visualize_volume_distribution_2d(volume_df):
-    fig = Figure(figsize=(12, 8))
-    ax = fig.add_subplot(1, 1, 1)
-    scatter = ax.scatter(volume_df['x'], volume_df['y'], c=volume_df['volumen_diff'], cmap='bwr', edgecolor='k')
-
-    cbar = fig.colorbar(scatter, ax=ax)
-    cbar.set_label('Volumendifferenz (m³)', fontsize=14)
-    cbar.ax.tick_params(labelsize=12)
+    # Zustand 1
+    ax.scatter(point_df['x'], point_df['y'], point_df['z1'], c='#4664AA', label='Zustand 1', s=20)
 
     ax.set_xlabel('x [m]', fontsize=18, fontweight='bold')
     ax.set_ylabel('y [m]', fontsize=18, fontweight='bold')
-    ax.set_title('Verteilung Volumendifferenz 2D', fontsize=22, fontweight='bold')
-    ax.set_aspect('equal')
+    ax.set_zlabel('z (interpoliert)', fontsize=18, fontweight='bold')
+    ax.set_title('3D-Darstellung der interpolierten Punkte für Zustand 0 und Zustand 1', fontsize=22, fontweight='bold', pad=20)
+    # Legende vergrößern
+    legend = ax.legend(loc='center left', bbox_to_anchor=(-0.15, 0.5), fontsize=14, markerscale=2)
+    legend.get_frame().set_linewidth(1.5)  # Optional: Rahmen der Legende verstärke
+
+    # Optional: Entfernen der Hintergrundflächen und Gitternetzlinien
+    ax.xaxis.pane.fill = False
+    ax.yaxis.pane.fill = False
+    ax.zaxis.pane.fill = False
+    # ax.grid(False)
+
     return fig
-def visualize_volume_bars_3d(volume_df, bounding_box, cell_size=1.0):
+def visualize_meshes_and_raster_points(triangles_set, raster_points):
     """
-    Erstellt eine Matplotlib-Figur für das 3D Volumendifferenz Balkendiagramm.
+    Visualisiert zwei Meshes nebeneinander, jedes mit denselben Rasterpunkten.
 
-    :param volume_df: Pandas DataFrame mit den Volumendifferenzen
-    :param bounding_box: Dictionary mit min_x, max_x, min_y, max_y
-    :param cell_size: Größe der Rasterzellen
-    :return: Matplotlib Figure
+    :param triangles_set: Liste von zwei Meshes, wobei jedes Mesh eine Liste von Dreiecken ist.
+    :param raster_points: NumPy-Array von Rasterpunkten (x, y).
     """
-    # Positive und negative Volumendifferenzen trennen
-    positive_volumes = volume_df[volume_df['volumen_diff'] >= 0]
-    negative_volumes = volume_df[volume_df['volumen_diff'] < 0]
 
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+
+    for idx, triangles in enumerate(triangles_set):
+        ax = axes[idx]
+
+        # Zeichne die Dreiecke des aktuellen Meshes
+        for triangle in triangles:
+            a, b, c = triangle
+            polygon = Polygon([a[:2], b[:2], c[:2]], closed=True, fill=None, edgecolor='r', linewidth=1)
+            ax.add_patch(polygon)
+
+        # Zeichne die Rasterpunkte
+        ax.scatter(raster_points[:, 0], raster_points[:, 1], color='green', s=5)
+
+        ax.set_xlabel('x [m]', fontsize=18, fontweight='bold')
+        ax.set_ylabel('y [m]', fontsize=18, fontweight='bold')
+        ax.set_title(f'Mesh {idx + 1} und Rasterpunkte', fontsize=22, fontweight='bold', pad=20)
+        ax.grid(True)
+        ax.set_aspect('equal')  # Gleiche Skalierung auf beiden Achsen
+
+    fig.tight_layout()
+    return fig
+def visualize_volume_distribution_2d(point_df):
     fig = Figure(figsize=(12, 8))
-    ax = fig.add_subplot(1,1,1, projection='3d')
+    ax = fig.add_subplot(1, 1, 1)
+
+    # Farbskala von (0, 150, 130) über Weiß nach (70, 100, 170)
+    color_list = ((0/255, 150/255, 130/255), (1.0, 1.0, 1.0), (70/255, 100/255, 170/255))
+    custom_cmap = LinearSegmentedColormap.from_list('custom_cmap', colors=color_list)
+
+    # Werte unterhalb des Schwellenwerts auf 0 setzen (oder maskieren)
+    volumen_diff_rounded = np.round(point_df['volumen_diff'] / 0.1) * 0.1
+
+    # Scatterplot mit angepassten Volumendifferenzen
+    scatter = ax.scatter(
+        point_df['x'], point_df['y'],
+        c=volumen_diff_rounded, cmap=custom_cmap, edgecolor='k'
+    )
+
+    # Colorbar
+    cbar = fig.colorbar(scatter, ax=ax)
+    cbar.set_label('Volumendifferenz (m³)', fontsize=18, fontweight='bold')
+    cbar.ax.tick_params(labelsize=12)
+
+    # Achsenbeschriftung und Titel
+    ax.set_xlabel('x [m]', fontsize=18, fontweight='bold')
+    ax.set_ylabel('y [m]', fontsize=18, fontweight='bold')
+    ax.set_title('Verteilung Volumendifferenz 2D', fontsize=22, fontweight='bold', pad=20)
+    ax.set_aspect('equal')
+
+    return fig
+def visualize_volume_bars_3d(point_df, bounding_box, cell_size=1.0):
+    # Positive und negative Volumendifferenzen trennen
+    positive_volumes = point_df[point_df['volumen_diff'] > 0]
+    negative_volumes = point_df[point_df['volumen_diff'] < 0]
+
+    fig = Figure(figsize=(14, 10))
+    ax = fig.add_subplot(1, 1, 1, projection='3d')
 
     # Plotten der positiven Volumina (Überschuss)
     if not positive_volumes.empty:
         ax.bar3d(
             positive_volumes['x'],
             positive_volumes['y'],
-            np.zeros(len(positive_volumes)),
+            np.zeros(len(positive_volumes)),  # Start bei z=0
             dx=cell_size,
             dy=cell_size,
             dz=positive_volumes['volumen_diff'],
-            color='blue',
+            color='#4664AA',
             shade=True,
             alpha=0.7,
             label='Überschuss'
@@ -289,60 +361,57 @@ def visualize_volume_bars_3d(volume_df, bounding_box, cell_size=1.0):
         ax.bar3d(
             negative_volumes['x'],
             negative_volumes['y'],
-            negative_volumes['volumen_diff'],  # Startposition z ist negativ
+            np.zeros(len(negative_volumes)),  # Start bei z=0
             dx=cell_size,
             dy=cell_size,
-            dz=negative_volumes['volumen_diff'].abs(),  # Höhe ist positiv
-            color='red',
+            dz=negative_volumes['volumen_diff'],
+            color='#A22223',
             shade=True,
             alpha=0.7,
             label='Defizit'
         )
 
+    # Berechnung der Z-Achsenlimits
+    min_vol_diff = point_df['volumen_diff'].min()
+    max_vol_diff = point_df['volumen_diff'].max()
+    z_min = min(0, min_vol_diff)
+    z_max = max(0, max_vol_diff)
+    z_range = z_max - z_min
+    if z_range == 0:
+        z_range = 1
+    padding = z_range * 0.1
+    ax.set_zlim(z_min - padding, z_max + padding)
+
+    # Anpassung des Blickwinkels
+    ax.view_init(elev=20, azim=30)
+
+    # Einstellung des Seitenverhältnisses
+    ax.set_box_aspect([1, 1, 0.5])
+
     # Achsenbeschriftungen und Titel
-    ax.set_xlabel('x [m]', fontsize=18, fontweight='bold')  # Größere und fette Beschriftung
-    ax.set_ylabel('y [m]', fontsize=18, fontweight='bold')  # Größere und fette Beschriftung
-    ax.set_zlabel('Volumendifferenz [m³]', fontsize=18, fontweight='bold')  # Größere und fette Beschriftung
-    ax.set_title('Verteilung Volumendifferenz 3D', fontsize=22, fontweight='bold')  # Größerer und fetter Titel
+    ax.set_xlabel('x [m]', fontsize=18, fontweight='bold')
+    ax.set_ylabel('y [m]', fontsize=18, fontweight='bold')
+    ax.set_zlabel('Volumendifferenz [m³]', fontsize=18, fontweight='bold')
+    ax.set_title('Verteilung Volumendifferenz 3D', fontsize=22, fontweight='bold', pad=20)
 
-    # Festlegen der Z-Achsen-Skalierung unabhängig von der Rastergröße
-    min_z = volume_df['volumen_diff'].min()
-    max_z = volume_df['volumen_diff'].max()
-    padding_z = max(abs(min_z), abs(max_z)) * 0.1  # 10% Padding basierend auf dem maximalen Absolutwert
-
-    ax.set_zlim(min_z - padding_z, max_z + padding_z)
-
-    # Deaktivieren des Standardgitternetzes
-    ax.grid(False)
-
-    # Manuelles Hinzufügen eines Gitternetzes nur auf der XY-Ebene (z=0)
+    # Gitterlinien auf der XY-Ebene
     x_min, x_max = bounding_box['min_x'], bounding_box['max_x']
     y_min, y_max = bounding_box['min_y'], bounding_box['max_y']
-
-    # Erstellen Sie eine Reihe von Linien entlang der X-Achse
     for x in np.arange(x_min, x_max + cell_size, cell_size):
         ax.plot([x, x], [y_min, y_max], [0, 0], color='gray', linewidth=0.5)
-
-    # Erstellen Sie eine Reihe von Linien entlang der Y-Achse
     for y in np.arange(y_min, y_max + cell_size, cell_size):
         ax.plot([x_min, x_max], [y, y], [0, 0], color='gray', linewidth=0.5)
 
-    # Entfernen Sie die Hintergrundebenen und Achsenflächen
+    # Entfernen der Hintergrundebenen und Achsenflächen
     ax.xaxis.pane.fill = False
     ax.yaxis.pane.fill = False
     ax.zaxis.pane.fill = False
-
     ax.xaxis.pane.set_edgecolor('white')
     ax.yaxis.pane.set_edgecolor('white')
     ax.zaxis.pane.set_edgecolor('white')
-
-    # Achsenlinien nur anzeigen
-    ax.xaxis.line.set_color((1.0, 1.0, 1.0, 1.0))  # Weiß, vollständig sichtbar
+    ax.xaxis.line.set_color((1.0, 1.0, 1.0, 1.0))
     ax.yaxis.line.set_color((1.0, 1.0, 1.0, 1.0))
     ax.zaxis.line.set_color((1.0, 1.0, 1.0, 1.0))
-
-    # Festlegen des Blickwinkels für bessere Sichtbarkeit
-    ax.view_init(elev=30, azim=45)
 
     # Legende hinzufügen
     handles, labels = ax.get_legend_handles_labels()
@@ -352,32 +421,37 @@ def visualize_volume_bars_3d(volume_df, bounding_box, cell_size=1.0):
         unique.keys(),
         fontsize=14,
         title_fontsize=16,
-        loc='upper left',
-        bbox_to_anchor=(-1,1)
+        loc='center left',
+        bbox_to_anchor=(-0.2, 0.5)
     )
-
     return fig
-def visualize_results(bounding_box, triangles_mesh0, triangles_mesh1, volume_df, middle_point):
+
+# --- Finale Funktion zur Visualisierung aller Grafiken --- #
+def visualize_results(bounding_box, raster_points, triangles_set, point_df):
     """
     Visualisiert die Ergebnisse der Bodenaushub-Berechnung.
 
     :param bounding_box: Dictionary mit min_x, max_x, min_y, max_y
-    :param triangles_mesh0: Numpy Array der Dreiecke für Mesh Zustand 0
-    :param triangles_mesh1: Numpy Array der Dreiecke für Mesh Zustand 1
-    :param volume_df: Pandas DataFrame mit den Volumendifferenzen
-    :param middle_point: Tuple mit den Mittelpunkten der Bounding Box
+    :param raster_points: Array mit den Rasterpunkten
+    :param triangles_set: Numpy Array der Netze für Zustand 0 und Zustand 1
+    :param point_df: Pandas DataFrame mit den interpolierten Höhen und Volumendifferenzen
     """
     print("Visualize Results aufgerufen")
+
+    # Interpolierte z-Koordinaten plotten --> To Do
+    fig_interpolated_points = visualize_interpolated_points(point_df)
+    show_plot_in_new_window(fig_interpolated_points, "Interpolierte Punkte")
+
     # 2D Mesh Visualisierung
-    fig_mesh = visualize_mesh_2d(triangles_mesh0, triangles_mesh1, bounding_box)
+    fig_mesh = visualize_meshes_and_raster_points(triangles_set, raster_points)
     show_plot_in_new_window(fig_mesh, "2D Mesh Visualisierung")
 
-    # 2D Volumendifferenz Visualisierung
-    fig_dist2d = visualize_volume_distribution_2d(volume_df)
+    # 2D Volumendifferenz Visualisierung --> das brauche ich nicht unbedingt
+    fig_dist2d = visualize_volume_distribution_2d(point_df)
     show_plot_in_new_window(fig_dist2d, "2D Volumendifferenzverteilung")
 
     # 3D Volumendifferenz Balkendiagramm
-    fig_dist3d = visualize_volume_bars_3d(volume_df, bounding_box)
+    fig_dist3d = visualize_volume_bars_3d(point_df, bounding_box)
     show_plot_in_new_window(fig_dist3d, "3D Volumendifferenz Balkendiagramm")
 def show_plot_in_new_window(fig, window_title):
     """
@@ -406,20 +480,43 @@ def show_plot_in_new_window(fig, window_title):
 
     new_window.geometry("1200x800")
 
-def main(triangles_0, triangles_1, raster_points, depot_distance=50, cell_size=1.0):
-    # 1. Berechne Volumendifferenzen
-    volume_df = calculate_discrete_volume_difference(triangles_0, triangles_1, raster_points, cell_size)
+def perform_bodenaushub(zustand0_file, zustand1_file, depot_distance, cell_size):
 
-    # 2. Klassifiziere die Punkte in Überschuss- und Defizitpunkte
-    excess_points, deficit_points = classify_points(volume_df)
+    # 1. Lade Netze
+    triangles_set = load_stl_files(zustand0_file, zustand1_file)
 
-    # 3. Berechne die Distanzmatrix zwischen den Überschuss- und Defizitpunkten
-    distance_matrix = calculate_distance_matrix(excess_points, deficit_points)
+    # 2. Berechne Bounding Box
+    bounding_box = calculate_bounding_box(triangles_set)
 
-    # 4. Lösen des unbalancierten Transportproblems
-    transport_plan, to_depot, from_depot, prob = solve_unbalanced_transport_problem(
-        excess_points, deficit_points, distance_matrix, depot_distance
-    )
+    # 3. Erstelle das Raster
+    raster_points = create_raster(bounding_box, cell_size)
 
-    return volume_df, excess_points, deficit_points, distance_matrix, transport_plan, to_depot, from_depot, prob
+    # 4. Interpoliere die Höhe der Rasterpunkte für Zustand 0 und Zustand 1
+    point_df = interpolate_height_for_points(raster_points, triangles_set)
+
+    # 5. Berechne die diskreten Volumendifferenzen und klassifiziere Überschuss- und Defizitpunkte
+    point_df = calculate_discrete_volume_difference(point_df, cell_size)
+
+    # 6. Berechne die Distanzmatrix
+    distance_matrix, excess_points, deficit_points = calculate_distance_matrix(point_df)
+
+    # 7. Löse das Transportproblem
+    transport_plan, to_depot_value, from_depot_value, total_excess, total_deficit, total_difference, depot_costs, internal_costs, total_costs, prob = solve_unbalanced_transport_problem(excess_points, deficit_points, distance_matrix, depot_distance)
+
+    return {
+        'bounding_box': bounding_box,
+        'raster_points': raster_points,
+        'triangles_set': triangles_set,
+        'point_df': point_df,
+        'transport_plan': transport_plan,
+        'to_depot_value': to_depot_value,
+        'from_depot_value': from_depot_value,
+        'total_excess': total_excess,
+        'total_deficit': total_deficit,
+        'total_difference': total_difference,
+        'depot_costs': depot_costs,
+        'internal_costs': internal_costs,
+        'total_costs': total_costs,
+        'prob': prob
+    }
 

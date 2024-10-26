@@ -3,15 +3,13 @@ from ifcopenshell.util.element import get_psets
 import os
 from utils.helpers import (generate_output_file_path, create_colour_assignment)
 
-
-def filter_properties(ifc_file, property_sets, single_properties=None, colour_rgb=(255, 0, 0), transparency=0.0):
+def filter_properties(ifc_file, property_conditions, colour_rgb=(162, 34, 35), transparency=0.1):
     """
-    Filtert die IFC-Datei basierend auf den angegebenen Property Sets und Properties.
+    Filtert die IFC-Datei basierend auf den angegebenen Property Sets, Properties und Werten.
     Färbt die zutreffenden Elemente ein und speichert eine neue IFC-Datei mit einem Zeitstempel.
 
     :param ifc_file: Pfad zur Original-IFC-Datei
-    :param property_sets: Liste von Property Sets zum Filtern
-    :param single_properties: Liste von einzelnen Properties zum Filtern (optional)
+    :param property_conditions: Liste von Dictionaries mit Schlüsseln 'property_set', 'property', 'value'
     :param colour_rgb: Farbe für die Farbzuweisung (default: Rot)
     :param transparency: Transparenzwert (default: 0.0)
     :return: Pfad zur gefilterten IFC-Datei
@@ -31,30 +29,52 @@ def filter_properties(ifc_file, property_sets, single_properties=None, colour_rg
         # Hole alle Property Sets
         psets = ifcopenshell.util.element.get_psets(element)
 
-        # Flags zur Bestimmung, ob das Element gefiltert werden soll
-        matches_property_set = False
-        matches_single_property = False
+        # Flag, um zu bestimmen, ob das Element gefiltert werden soll
+        element_matches = False
 
-        # Überprüfe Property Sets
-        if property_sets:
-            if any(ps in psets for ps in property_sets):
-                matches_property_set = True
+        # Überprüfe jede Bedingung
+        for condition in property_conditions:
+            pset_name = condition.get('property_set')
+            prop_name = condition.get('property')
+            value = condition.get('value')
 
-        # Überprüfe einzelne Properties
-        if single_properties:
-            properties = []
-            if property_sets:
-                for pset in property_sets:
-                    properties.extend(psets.get(pset, {}).keys())
-            else:
-                for pset_props in psets.values():
-                    properties.extend(pset_props.keys())
-            if any(prop in properties for prop in single_properties):
-                matches_single_property = True
+            # Überprüfe, ob das Property Set existiert
+            if pset_name and pset_name in psets:
+                # Wenn nur das Property Set angegeben ist
+                if not prop_name and not value:
+                    element_matches = True
+                    break  # Keine weitere Prüfung nötig
+                properties = psets[pset_name]
+                # Überprüfe, ob die Property existiert
+                if prop_name and prop_name in properties:
+                    # Wenn nur Property Set und Property angegeben sind
+                    if not value:
+                        element_matches = True
+                        break
+                    prop_value = properties[prop_name]
+                    # Vergleiche den Wert (als String, um Typunterschiede zu vermeiden)
+                    if str(prop_value) == str(value):
+                        element_matches = True
+                        break
+            elif not pset_name:
+                # Wenn kein Property Set angegeben ist, durchsuchen wir alle Property Sets
+                for pset, properties in psets.items():
+                    # Überprüfe, ob die Property existiert
+                    if prop_name and prop_name in properties:
+                        # Wenn nur Property angegeben ist
+                        if not value:
+                            element_matches = True
+                            break
+                        prop_value = properties[prop_name]
+                        # Vergleiche den Wert
+                        if str(prop_value) == str(value):
+                            element_matches = True
+                            break
+                if element_matches:
+                    break  # Wenn Element passt, weitere Prüfung abbrechen
 
-        # Entscheide, ob das Element gefiltert werden soll
-        if (property_sets and matches_property_set) or (single_properties and matches_single_property):
-            # Färbe das Element ein
+        # Wenn das Element die Bedingungen erfüllt, färbe es ein
+        if element_matches:
             if element.Representation:
                 for rep in element.Representation.Representations:
                     if hasattr(rep, "Items"):

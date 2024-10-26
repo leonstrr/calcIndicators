@@ -1,12 +1,11 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog
 import os
 import sys
 
 from gui_modules.gui_helpers import (
     add_hover_effect,
     load_blender_icon,
-    choose_colour,
     update_transparency_entry
 )
 from gui_modules.callbacks import (
@@ -354,7 +353,7 @@ def main():
         font=("Arial", 18)
     ).grid(row=1, column=0, padx=0, pady=10, sticky='w')
 
-    depot_distance_var = tk.DoubleVar(value=50.0)  # Standardwert 50.0
+    depot_distance_var = tk.DoubleVar(value=500.0)  # Standardwert 500.0
     entry_depot_distance = tk.Entry(
         frame_eingaben,
         textvariable=depot_distance_var,
@@ -382,7 +381,8 @@ def main():
             zustand1_file_var,
             cell_size_var,
             depot_distance_var,
-            label_min_work
+            label_volume,
+            label_work
         ),
         relief="flat",
         fg="#FFFFFF",
@@ -397,14 +397,24 @@ def main():
     add_hover_effect(button_start_berechnung, hover_bg="#505050", normal_bg="#404040")
 
     # Label zur Anzeige der minimalen Arbeit
-    label_min_work = tk.Label(
+    label_volume = tk.Label(
         tab2,
-        text="Minimale Arbeit: zu berechnen...",
+        text="Minimale Arbeit: - zu berechnen - ",
         bg="#213563",
         fg="#FFFFFF",
         font=("Arial", 18)
     )
-    label_min_work.place(x=150.0, y=470.0)  # Angepasste Position
+    label_volume.place(x=150.0, y=470.0)  # Angepasste Position
+
+    # Label zur Anzeige Mengen/Arbeit von/zur Deponie
+    label_work = tk.Label(
+        tab2,
+        text="Davon zum/vom Depot: - zu berechnen - ",
+        bg="#213563",
+        fg="#FFFFFF",
+        font=("Arial", 18)
+    )
+    label_work.place(x=150.0, y=500.0)  # Angepasste Position
 
     # --- Inhalte für Tab 3 (Property-Filter) --- #
     # Canvas erstellen mit blauer Hintergrundfarbe und dynamischer Größe
@@ -422,14 +432,14 @@ def main():
         150.0,
         50.0,
         anchor="nw",
-        text="Filter nach Property Sets",
+        text="Filter nach Properties",
         fill="#FFFFFF",
         font=("Arial", 28, "bold")
     )
 
     # Hauptframe für die IFC-Datei-Auswahl
     frame_ifc_2 = tk.Frame(tab3, bg="#213563")
-    frame_ifc_2.place(x=150.0, y=100.0, width=900.0, height=48.0)  # Höhe auf 48.0 angepasst
+    frame_ifc_2.place(x=150.0, y=100.0, width=900.0, height=48.0)
 
     # Label für Input IFC-Datei
     label_ifc_2 = tk.Label(
@@ -483,132 +493,112 @@ def main():
     # Hover-Effekte für das Blender-Icon hinzufügen
     add_hover_effect(button_open_input_blender_2, hover_image=blender_icon_hover, normal_image=blender_icon)
 
-    # --- Eingabefelder für Filterkriterien --- #
-    frame_filters = tk.Frame(tab3, bg="#213563")
-    frame_filters.place(x=150.0, y=180.0, width=900.0, height=150.0)  # Angepasste Position und Größe
+    # --- Eingabefelder für Filterbedingungen --- #
+    frame_conditions = tk.Frame(tab3, bg="#213563")
+    frame_conditions.place(x=150.0, y=180.0, width=900.0, height=120.0)  # Höhe angepasst
 
-    # Label und Eingabefeld für Property Sets
-    label_property_sets = tk.Label(
-        frame_filters,
-        text="Property Sets (Kommagetrennt):",
+    # Label für Filterbedingungen
+    label_conditions = tk.Label(
+        frame_conditions,
+        text="Filterbedingungen (Format: PropertySet.Property=Value):",
         bg="#213563",
         fg="#FFFFFF",
-        font=("Arial", 18)
+        font=("Arial", 18),
+        anchor='w',
+        justify='left'
     )
-    label_property_sets.grid(row=0, column=0, padx=10, pady=10, sticky='w')
+    label_conditions.pack(fill='x', anchor='w')
 
-    entry_property_sets = tk.Entry(
-        frame_filters,
-        width=50,
+    # Mehrzeiliges Textfeld für die Eingabe der Bedingungen
+    text_conditions = tk.Text(
+        frame_conditions,
         bg="#404040",
         fg="#FFFFFF",
-        font=("Arial", 16)
+        font=("Arial", 16),
+        height=4,  # Anzahl der sichtbaren Zeilen
+        bd=0
     )
-    entry_property_sets.grid(row=0, column=1, padx=10, pady=10, sticky='w')
+    text_conditions.pack(fill='both', expand=True, anchor='w')
 
-    # Hover-Effekte für das Property Sets Eingabefeld hinzufügen
-    add_hover_effect(entry_property_sets, hover_bg="#505050", normal_bg="#404040")
+    # Hover-Effekte für das Textfeld hinzufügen
+    add_hover_effect(text_conditions, hover_bg="#505050", normal_bg="#404040")
 
-    # Label und Eingabefeld für einzelne Properties
-    label_single_properties = tk.Label(
-        frame_filters,
-        text="Einzelne Properties (Kommagetrennt):",
-        bg="#213563",
-        fg="#FFFFFF",
-        font=("Arial", 18)
-    )
-    label_single_properties.grid(row=1, column=0, padx=10, pady=10, sticky='w')
+    # Beispieltext einfügen
+    example_conditions = "Beispiel:\nPset_WallCommon.FireRating=30min\nPset_DoorCommon.IsExternal=True"
+    text_conditions.insert('1.0', example_conditions)
+    text_conditions.config(fg="#A9A9A9")  # Platzhalterfarbe
 
-    entry_single_properties = tk.Entry(
-        frame_filters,
-        width=50,
-        bg="#404040",
-        fg="#FFFFFF",
-        font=("Arial", 16)
-    )
-    entry_single_properties.grid(row=1, column=1, padx=10, pady=10, sticky='w')
+    # Funktionen zum Entfernen und Wiederherstellen des Beispieltexts
+    def on_text_click(event):
+        if text_conditions.get("1.0", "end-1c") == example_conditions:
+            text_conditions.delete("1.0", tk.END)
+            text_conditions.config(fg="#FFFFFF")
 
-    # Hover-Effekte für das einzelne Properties Eingabefeld hinzufügen
-    add_hover_effect(entry_single_properties, hover_bg="#505050", normal_bg="#404040")
+    def on_text_focusout(event):
+        if text_conditions.get("1.0", "end-1c").strip() == '':
+            text_conditions.insert("1.0", example_conditions)
+            text_conditions.config(fg="#A9A9A9")
+
+    text_conditions.bind('<FocusIn>', on_text_click)
+    text_conditions.bind('<FocusOut>', on_text_focusout)
 
     # --- Eingabefelder für Farbe und Transparenz --- #
     frame_colour_transparency = tk.Frame(tab3, bg="#213563")
-    frame_colour_transparency.place(x=150.0, y=500.0, width=900.0, height=100.0)  # Angepasste Position und Größe
+    frame_colour_transparency.place(x=150.0, y=400.0, width=900.0, height=150.0)  # Höhe angepasst
 
-    # Label und Eingabefeld für Farbe
+    # Label für Farbe
     label_colour = tk.Label(
         frame_colour_transparency,
         text="Farbe (R,G,B):",
         bg="#213563",
         fg="#FFFFFF",
-        font=("Arial", 18)
+        font=("Arial", 18),
+        anchor='w'
     )
-    label_colour.grid(row=0, column=0, padx=10, pady=10, sticky='w')
+    label_colour.pack(fill='x', anchor='w')
 
+    # Eingabefeld für Farbe
     entry_colour = tk.Entry(
         frame_colour_transparency,
-        width=20,
         bg="#404040",
         fg="#FFFFFF",
-        font=("Arial", 16)
+        font=("Arial", 16),
+        bd=0
     )
-    entry_colour.grid(row=0, column=1, padx=10, pady=10, sticky='w')
+    entry_colour.pack(fill='x', anchor='w')
     entry_colour.insert(0, "255,0,0")  # Standardfarbe Rot
 
     # Hover-Effekte für das Farbe-Eingabefeld hinzufügen
     add_hover_effect(entry_colour, hover_bg="#505050", normal_bg="#404040")
 
-    # Button für Farbwahl (Colour Picker) hinzufügen
-    button_choose_colour = tk.Button(
-        frame_colour_transparency,
-        text="Farbe wählen",
-        command=lambda: choose_colour(entry_colour),
-        bg="#404040",
-        fg="#FFFFFF",
-        font=("Arial", 12),
-        padx=10,
-        pady=5
-    )
-    button_choose_colour.grid(row=0, column=2, padx=10, pady=10, sticky='w')
-
-    # Label und Eingabefeld für Transparenz
+    # Label für Transparenz
     label_transparency = tk.Label(
         frame_colour_transparency,
         text="Transparenz (0.0 - 1.0):",
         bg="#213563",
         fg="#FFFFFF",
-        font=("Arial", 18)
+        font=("Arial", 18),
+        anchor='w'
     )
-    label_transparency.grid(row=1, column=0, padx=10, pady=10, sticky='w')
+    label_transparency.pack(fill='x', anchor='w')
 
+    # Eingabefeld für Transparenz
     entry_transparency = tk.Entry(
         frame_colour_transparency,
-        width=10,
         bg="#404040",
         fg="#FFFFFF",
-        font=("Arial", 16)
+        font=("Arial", 16),
+        bd=0
     )
-    entry_transparency.grid(row=1, column=1, padx=10, pady=10, sticky='w')
+    entry_transparency.pack(fill='x', anchor='w')
     entry_transparency.insert(0, "0.0")  # Standardtransparenz
 
     # Hover-Effekte für das Transparenz-Eingabefeld hinzufügen
     add_hover_effect(entry_transparency, hover_bg="#505050", normal_bg="#404040")
 
-    # Transparenz-Slider hinzufügen
-    scale_transparency = ttk.Scale(
-        frame_colour_transparency,
-        from_=0.0,
-        to=1.0,
-        orient='horizontal',
-        command=lambda val: update_transparency_entry(entry_transparency, val),
-        value=0.0,
-        length=200
-    )
-    scale_transparency.grid(row=1, column=2, padx=10, pady=10, sticky='w')
-
     # --- Button zum Starten des Filters --- #
     frame_filter_button = tk.Frame(tab3, bg="#213563")
-    frame_filter_button.place(x=150.0, y=350.0, width=900.0, height=80.0)  # Angepasste Position
+    frame_filter_button.place(x=150.0, y=310.0, width=900.0, height=80.0)  # Position angepasst
 
     button_start_filter = tk.Button(
         frame_filter_button,
@@ -617,8 +607,7 @@ def main():
         highlightthickness=0,
         command=lambda: apply_property_filter(
             input_ifc_file_var.get(),
-            entry_property_sets.get(),
-            entry_single_properties.get(),
+            text_conditions.get("1.0", tk.END),  # Eingabe aus dem Text-Widget
             entry_colour.get(),
             entry_transparency.get(),
             blender_executable,
@@ -627,11 +616,11 @@ def main():
         relief="flat",
         fg="#FFFFFF",
         bg="#404040",
-        font=("Arial", 22, 'bold'),
-        padx=10,
-        pady=10
+        font=("Arial", 18, 'bold'),
+        padx=0,
+        pady=0
     )
-    button_start_filter.pack(side="left", fill="both", expand=True, padx=(0, 0), pady=10)
+    button_start_filter.pack(fill="both", expand=True)
 
     # Hover-Effekte für den Start-Filter Button hinzufügen
     add_hover_effect(button_start_filter, hover_bg="#505050", normal_bg="#404040")

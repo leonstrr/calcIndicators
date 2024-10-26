@@ -8,7 +8,6 @@ def generate_output_file_path(input_path):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     output_filename = f"{input_path.stem}_filtered_{timestamp}{input_path.suffix}"
     return input_path.parent / output_filename
-
 def create_colour_assignment(model, element, representation_item, color_rgb, transparency=0.0):
     """
     Weist einem Element eine bestimmte Farbe und Transparenz zu.
