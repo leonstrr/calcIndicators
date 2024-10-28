@@ -1,9 +1,10 @@
 from pathlib import Path
 from tkinter import filedialog, messagebox
 import ast
+import os
 
 from gui_modules.gui_helpers import open_in_blender, open_stl_in_blender
-from modules.bodenaushub import perform_bodenaushub, visualize_results
+from modules.bodenaushub import perform_bodenaushub, visualize_results, export_transport_plan_to_csv
 from modules.lichtraumprofil import create_lrp_and_perform_clash_detection
 from utils.helpers import generate_output_file_path  # Allgemeine Funktionen importieren
 from modules.property_filter import filter_properties  # Importiere die filter_properties-Funktion
@@ -78,37 +79,91 @@ def open_specific_stl_in_blender(stl_file_var, blender_executable, open_stl_scri
         messagebox.showwarning("Warnung", "Bitte zuerst eine STL-Datei auswählen.")
         return
     open_stl_in_blender([stl_file], blender_executable, open_stl_script)
-def start_bodenaushub(zustand0_file_var, zustand1_file_var, cell_size_var, depot_distance_var, label_volume, label_work):
+
+def start_bodenaushub(
+    zustand0_file_var,
+    zustand1_file_var,
+    cell_size_var,
+    depot_distance_var,
+    label_volume,
+    label_work
+):
+    """
+    Startet die Bodenaushub-Berechnung und aktualisiert die GUI entsprechend.
+
+    :param zustand0_file_var: StringVar für Zustand 0 STL-Datei
+    :param zustand1_file_var: StringVar für Zustand 1 STL-Datei
+    :param cell_size_var: DoubleVar für die Rastergröße
+    :param depot_distance_var: DoubleVar für die Deponie-Distanz
+    :param label_volume: Label-Widget für das Ergebnis der minimalen Arbeit
+    :param label_work: Label-Widget für die Mengen/Arbeit von/zur Deponie
+    """
+
     zustand0_file = zustand0_file_var.get()
     zustand1_file = zustand1_file_var.get()
     cell_size = cell_size_var.get()
     depot_distance = depot_distance_var.get()
 
     if not zustand0_file or not zustand1_file:
-        messagebox.showerror("Fehler", "Bitte wähle beide STL-Dateien aus.")
+        messagebox.showerror("Fehler", "Bitte beide STL-Dateien auswählen.")
         return
 
-    # Führe die Bodenaushub-Berechnung durch
-    results = perform_bodenaushub(zustand0_file, zustand1_file, depot_distance=depot_distance, cell_size=cell_size)
+    try:
+        # Berechnung durchführen
+        results = perform_bodenaushub(
+            zustand0_file,
+            zustand1_file,
+            depot_distance,
+            cell_size
+        )
 
-    # Aktualisiere die Label
-    total_excess = results['total_excess']
-    total_deficit = results['total_deficit']
-    total_difference = results['total_difference']
+        total_excess = results['total_excess']
+        total_deficit = results['total_deficit']
+        total_difference = total_excess - total_deficit
+        total_difference_message = abs(total_excess-total_deficit)
+        min_work = results['total_costs']
+        min_work_external = results['depot_costs']
 
-    min_work = results['total_costs']
-    min_work_external = results['depot_costs']
+        # Nachricht basierend auf dem Vorzeichen der Differenz erstellen
+        if total_difference > 0:
+            depot_message = f"zur"
+        else:
+            depot_message = f"von der"
 
-    label_volume.config(text=f"Überschüsse: {total_excess:.2f} m³, Defizite: {total_deficit:.2f} m³, Differenz gesamt: {total_difference:.2f} m³")
-    label_work.config(text=f"Minimale Arbeit (gesamt): {min_work:.2f} m³·m, davon {min_work_external:.2f} m³·m von/zur Deponie")
+        # Label neu beschriften
+        label_volume.config(
+            text=f"Überschüsse: {total_excess:.2f} m³, Defizite: {total_deficit:.2f} m³, Differenz gesamt: {total_difference:.2f} m³, Insgesamt {total_difference_message:.2f} m³ {depot_message} Deponie.")
+        label_work.config(
+            text=f"Minimale Arbeit (gesamt): {min_work:.2f} m³·m, davon {min_work_external:.2f} m³·m {depot_message} Deponie")
 
-    # Visualisiere die Ergebnisse
-    visualize_results(
-        results['bounding_box'],
-        results['raster_points'],
-        results['triangles_set'],
-        results['point_df'],
-    )
+        # Verzeichnis der STL-Dateien ermitteln
+        stl_directory = os.path.dirname(zustand0_file)
+
+        # Dateiname für die CSV-Datei festlegen
+        csv_filename = os.path.join(stl_directory, 'transport_plan.csv')
+
+        # Transportplan als CSV exportieren
+        export_transport_plan_to_csv(
+            results['transport_plan'],
+            results['excess_points'],
+            results['deficit_points'],
+            results['to_depot_value'],
+            results['from_depot_value'],
+            depot_distance,
+            filename=csv_filename
+        )
+
+        # Visualisiere die Ergebnisse
+        visualize_results(
+            results['bounding_box'],
+            results['raster_points'],
+            results['triangles_set'],
+            results['point_df'],
+        )
+
+    except Exception as e:
+        messagebox.showerror("Fehler", f"Bei der Berechnung ist ein Fehler aufgetreten:\n{e}")
+
 def apply_property_filter(ifc_file, conditions_input, colour, transparency, blender_executable, open_ifc_script):
     """
     Führt den Property-Filter durch und öffnet das Ergebnis in Blender.

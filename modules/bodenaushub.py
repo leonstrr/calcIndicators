@@ -309,7 +309,7 @@ def visualize_volume_distribution_2d(point_df):
     ax = fig.add_subplot(1, 1, 1)
 
     # Farbskala von (0, 150, 130) über Weiß nach (70, 100, 170)
-    color_list = ((0/255, 150/255, 130/255), (1.0, 1.0, 1.0), (70/255, 100/255, 170/255))
+    color_list = ((162/255, 34/255, 35/255), (1.0, 1.0, 1.0), (70/255, 100/255, 170/255))
     custom_cmap = LinearSegmentedColormap.from_list('custom_cmap', colors=color_list)
 
     # Werte unterhalb des Schwellenwerts auf 0 setzen (oder maskieren)
@@ -480,6 +480,68 @@ def show_plot_in_new_window(fig, window_title):
 
     new_window.geometry("1200x800")
 
+# --- Funktion zum Export des Transport-Planns --- #
+def export_transport_plan_to_csv(transport_plan, excess_points_df, deficit_points_df, to_depot_value, from_depot_value, depot_distance, filename='transport_plan.csv'):
+    """
+    Exportiert den Transportplan als CSV-Datei, inklusive Transport zur/von der Deponie.
+
+    :param transport_plan: NumPy-Array mit den Transportmengen von Überschusspunkten zu Defizitpunkten.
+    :param excess_points_df: DataFrame mit den Überschusspunkten (x, y, volumen_diff).
+    :param deficit_points_df: DataFrame mit den Defizitpunkten (x, y, volumen_diff).
+    :param to_depot_value: Gesamtmenge, die zur Deponie transportiert wird.
+    :param from_depot_value: Gesamtmenge, die von der Deponie abgeholt wird.
+    :param depot_distance: Distanz zur Deponie.
+    :param filename: Name der Ausgabedatei.
+    """
+    data = []
+    num_excess, num_deficit = transport_plan.shape
+    for i in range(num_excess):
+        for j in range(num_deficit):
+            amount = transport_plan[i, j]
+            if amount > 0:
+                source = excess_points_df.iloc[i]
+                destination = deficit_points_df.iloc[j]
+                data.append({
+                    'source_x': source['x'],
+                    'source_y': source['y'],
+                    'source_volumen_diff': source['volumen_diff'],
+                    'destination_x': destination['x'],
+                    'destination_y': destination['y'],
+                    'destination_volumen_diff': destination['volumen_diff'],
+                    'amount': amount,
+                    'to_depot': 0,
+                    'from_depot': 0
+                })
+    # Hinzufügen des Transports zur/von der Deponie
+    if to_depot_value > 0:
+        data.append({
+            'source_x': 'Various',
+            'source_y': 'Various',
+            'source_volumen_diff': 'Various',
+            'destination_x': 'Depot',
+            'destination_y': 'Depot',
+            'destination_volumen_diff': 'N/A',
+            'amount': to_depot_value,
+            'to_depot': 1,
+            'from_depot': 0
+        })
+    if from_depot_value > 0:
+        data.append({
+            'source_x': 'Depot',
+            'source_y': 'Depot',
+            'source_volumen_diff': 'N/A',
+            'destination_x': 'Various',
+            'destination_y': 'Various',
+            'destination_volumen_diff': 'Various',
+            'amount': from_depot_value,
+            'to_depot': 0,
+            'from_depot': 1
+        })
+    transport_df = pd.DataFrame(data)
+    transport_df.to_csv(filename, index=False)
+    print(f"Transportplan wurde als '{filename}' gespeichert.")
+
+
 def perform_bodenaushub(zustand0_file, zustand1_file, depot_distance, cell_size):
 
     # 1. Lade Netze
@@ -509,6 +571,8 @@ def perform_bodenaushub(zustand0_file, zustand1_file, depot_distance, cell_size)
         'triangles_set': triangles_set,
         'point_df': point_df,
         'transport_plan': transport_plan,
+        'excess_points': excess_points,
+        'deficit_points': deficit_points,
         'to_depot_value': to_depot_value,
         'from_depot_value': from_depot_value,
         'total_excess': total_excess,
