@@ -38,7 +38,6 @@ def process_elements(elements, name_filter="Alignment"):
             for element in filtered_elements:
                 print(f"#{element.id()} = {element.is_a()}(Name = {element.Name})")
             raise ValueError("Mehrere Elemente gefunden. Das Programm wird abgebrochen.")
-
 def create_lrp_profile(model, lrp_data):
     # --- Find the needed data --- #
     # Find street element to copy Representation Context and Object Placement
@@ -134,7 +133,6 @@ def create_lrp_profile(model, lrp_data):
         print(f"Fehler beim Färben des Lichtraumprofils: {e}")
 
     return lrp_built_element
-
 def filter_elements_by_properties(elements, pset_name, property_name, expected_value=True):
     """
     Filtert IfcBuiltElemente basierend auf einem Property Set und einer spezifischen Eigenschaft.
@@ -158,7 +156,6 @@ def filter_elements_by_properties(elements, pset_name, property_name, expected_v
                 if value == expected_value:
                     filtered.append(element)
     return filtered
-
 def perform_clash_detection(model, lrp_element):
     # --- Vorbereitung Clash Testing --- #
     # Alle IfcBuiltElemente abrufen, um das erstellte Lichtraumprofil einzuschließen
@@ -227,12 +224,10 @@ def perform_clash_detection(model, lrp_element):
             print(f"Fehler beim Färben des Elements mit GUID {guid}: {e}")
 
     return model  # Geändertes Modell zurückgeben
-
 def save_ifc_file(model, output_ifc_file):
     """Speichert das IFC-Modell."""
     model.write(output_ifc_file)
     print(f"IFC-Datei wurde erfolgreich geschrieben: {output_ifc_file}")
-
 def create_lrp_and_perform_clash_detection(input_ifc_file, output_ifc_file, lrp_data):
     """
     Kombinierte Funktion zum Erstellen des Lichtraumprofils und Durchführen der Clash Detection.

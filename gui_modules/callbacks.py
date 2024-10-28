@@ -7,7 +7,7 @@ from gui_modules.gui_helpers import open_in_blender, open_stl_in_blender
 from modules.bodenaushub import perform_bodenaushub, visualize_results, export_transport_plan_to_csv
 from modules.lichtraumprofil import create_lrp_and_perform_clash_detection
 from utils.helpers import generate_output_file_path  # Allgemeine Funktionen importieren
-from modules.property_filter import filter_properties  # Importiere die filter_properties-Funktion
+from modules.property_filter import open_model, filter_elements_in_model, color_elements  # Importiere die filter_properties-Funktion
 
 def on_open_input_in_blender(input_ifc_file, blender_executable, open_ifc_script):
     """Öffnet eine IFC-Datei in Blender."""
@@ -79,15 +79,7 @@ def open_specific_stl_in_blender(stl_file_var, blender_executable, open_stl_scri
         messagebox.showwarning("Warnung", "Bitte zuerst eine STL-Datei auswählen.")
         return
     open_stl_in_blender([stl_file], blender_executable, open_stl_script)
-
-def start_bodenaushub(
-    zustand0_file_var,
-    zustand1_file_var,
-    cell_size_var,
-    depot_distance_var,
-    label_volume,
-    label_work
-):
+def start_bodenaushub(zustand0_file_var,zustand1_file_var,cell_size_var,depot_distance_var,label_volume,label_work):
     """
     Startet die Bodenaushub-Berechnung und aktualisiert die GUI entsprechend.
 
@@ -163,14 +155,13 @@ def start_bodenaushub(
 
     except Exception as e:
         messagebox.showerror("Fehler", f"Bei der Berechnung ist ein Fehler aufgetreten:\n{e}")
-
 def apply_property_filter(ifc_file, conditions_input, colour, transparency, blender_executable, open_ifc_script):
     """
-    Führt den Property-Filter durch und öffnet das Ergebnis in Blender.
+    Führt den Property-Filter durch, färbt die passenden Elemente ein und öffnet das Ergebnis in Blender.
 
     :param ifc_file: Pfad zur IFC-Datei
     :param conditions_input: Eingabe aus dem Text-Widget (mehrzeiliger String)
-    :param colour: Farbe rgb
+    :param colour: Farbe im Format "R, G, B"
     :param transparency: Transparenz [0..1]
     :param blender_executable: Pfad zur Blender-Executable
     :param open_ifc_script: Pfad zum Blender-Skript zum Öffnen der IFC-Datei
@@ -213,35 +204,61 @@ def apply_property_filter(ifc_file, conditions_input, colour, transparency, blen
             continue
         condition = {'property_set': None, 'property': None, 'value': None}
         try:
+            # Zuerst nach '=' aufteilen, um Wert zu extrahieren
             if '=' in condition_str:
                 lhs, value = condition_str.split('=', 1)
                 condition['value'] = value.strip()
             else:
                 lhs = condition_str
+            lhs = lhs.strip()
+            # Jetzt prüfen, ob ein '.' vorhanden ist
             if '.' in lhs:
                 pset_name, prop_name = lhs.split('.', 1)
                 condition['property_set'] = pset_name.strip()
                 condition['property'] = prop_name.strip()
             else:
-                condition['property_set'] = lhs.strip()
+                condition['property'] = lhs.strip()
+            # Typkonvertierung des Wertes hier durchführen
+            if condition['value'] is not None:
+                value_str = condition['value']
+                # Versuchen, den Wert in eine Zahl umzuwandeln
+                try:
+                    if '.' in value_str or 'e' in value_str.lower():
+                        condition['value'] = float(value_str)
+                    else:
+                        condition['value'] = int(value_str)
+                except ValueError:
+                    # Wert bleibt ein String
+                    condition['value'] = value_str.strip()
             property_conditions.append(condition)
-        except ValueError:
-            messagebox.showerror("Fehler", f"Ungültiges Bedingungsformat: {condition_str}\nVerwenden Sie das Format 'PropertySet.Property=Value', 'PropertySet.Property' oder 'PropertySet'.")
+        except ValueError as ve:
+            messagebox.showerror(
+                "Fehler",
+                f"Ungültiges Bedingungsformat: {condition_str}\n{ve}\nVerwenden Sie das Format 'PropertySet.Property=Value', 'PropertySet.Property', 'Property=Value' oder 'Property'."
+            )
             return
 
     try:
-        # Führe den Filterprozess durch
-        filtered_ifc_file = filter_properties(
-            ifc_file,
-            property_conditions,
-            colour_rgb=colour_rgb,
-            transparency=transparency_val
-        )
+        # Öffne das Modell
+        model = open_model(ifc_file)
+
+        # Filtere die Elemente
+        matching_elements = filter_elements_in_model(model, property_conditions)
+
+        # Färbe die Elemente ein
+        color_elements(model, matching_elements, colour_rgb, transparency_val)
+
+        # Speichere das Modell
+        filtered_ifc_path = generate_output_file_path(ifc_file)
+        model.write(str(filtered_ifc_path))
+        print(f"Gefilterte IFC-Datei gespeichert unter: {filtered_ifc_path}")
+
         # Öffne die gefilterte IFC-Datei in Blender
-        open_in_blender(filtered_ifc_file, blender_executable, open_ifc_script)
+        open_in_blender(filtered_ifc_path, blender_executable, open_ifc_script)
 
     except Exception as e:
         messagebox.showerror("Fehler", f"Beim Anwenden des Filters ist ein Fehler aufgetreten:\n{e}")
+
 
 
 

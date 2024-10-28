@@ -139,7 +139,6 @@ def main():
     )
     button_input_file.pack(side="left", fill='both', expand=True, padx=(0, 10), pady=0)
 
-
     # Hover-Effekte für den Input-Datei-Button hinzufügen
     add_hover_effect(button_input_file, hover_bg="#505050", normal_bg="#404040")
 
@@ -519,28 +518,10 @@ def main():
         bd=0
     )
     text_conditions.pack(fill='both', expand=True, anchor='w')
+    text_conditions.insert(1.0, "ConcreteCover=0.06\nPset_ConcreteElementGeneral.CastingMethod=INSITU")
 
     # Hover-Effekte für das Textfeld hinzufügen
     add_hover_effect(text_conditions, hover_bg="#505050", normal_bg="#404040")
-
-    # Beispieltext einfügen
-    example_conditions = "Beispiel:\nPset_WallCommon.FireRating=30min\nPset_DoorCommon.IsExternal=True"
-    text_conditions.insert('1.0', example_conditions)
-    text_conditions.config(fg="#A9A9A9")  # Platzhalterfarbe
-
-    # Funktionen zum Entfernen und Wiederherstellen des Beispieltexts
-    def on_text_click(event):
-        if text_conditions.get("1.0", "end-1c") == example_conditions:
-            text_conditions.delete("1.0", tk.END)
-            text_conditions.config(fg="#FFFFFF")
-
-    def on_text_focusout(event):
-        if text_conditions.get("1.0", "end-1c").strip() == '':
-            text_conditions.insert("1.0", example_conditions)
-            text_conditions.config(fg="#A9A9A9")
-
-    text_conditions.bind('<FocusIn>', on_text_click)
-    text_conditions.bind('<FocusOut>', on_text_focusout)
 
     # --- Eingabefelder für Farbe und Transparenz --- #
     frame_colour_transparency = tk.Frame(tab3, bg="#213563")
@@ -566,7 +547,7 @@ def main():
         bd=0
     )
     entry_colour.pack(fill='x', anchor='w')
-    entry_colour.insert(0, "255,0,0")  # Standardfarbe Rot
+    entry_colour.insert(0, "162,34,35")  # KIT Rot
 
     # Hover-Effekte für das Farbe-Eingabefeld hinzufügen
     add_hover_effect(entry_colour, hover_bg="#505050", normal_bg="#404040")
