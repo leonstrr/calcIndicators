@@ -111,7 +111,6 @@ def color_elements(model, elements, colour_rgb, transparency):
                         if isinstance(item, ifcopenshell.entity_instance):
                             # Füge die Farbzuweisung hinzu
                             create_colour_assignment(model, element, item, colour_rgb, transparency)
-
 def main():
     # Pfad zur IFC-Datei
     ifc_file = "path/to/your/file.ifc"

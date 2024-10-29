@@ -1,4 +1,5 @@
 from pathlib import Path
+import tkinter as tk
 from tkinter import filedialog, messagebox
 import ast
 import os
@@ -6,7 +7,7 @@ import os
 from gui_modules.gui_helpers import open_in_blender, open_stl_in_blender
 from modules.bodenaushub import perform_bodenaushub, visualize_results, export_transport_plan_to_csv
 from modules.lichtraumprofil import create_lrp_and_perform_clash_detection
-from utils.helpers import generate_output_file_path  # Allgemeine Funktionen importieren
+from utils.helpers import generate_output_file_path, parse_property_conditions  # Allgemeine Funktionen importieren
 from modules.property_filter import open_model, filter_elements_in_model, color_elements  # Importiere die filter_properties-Funktion
 
 def on_open_input_in_blender(input_ifc_file, blender_executable, open_ifc_script):
@@ -27,13 +28,14 @@ def select_input_file(button_input_file, input_ifc_file_var):
         input_ifc_file_var.set(file_path)
         button_input_file.config(text=f"   Input IFC: {Path(file_path).name}")
         print(f"Input IFC-Datei ausgewählt: {file_path}")
-def on_create_lrp_and_clash_detection(entry_1, input_ifc_file, blender_executable, open_ifc_script):
+def on_create_lrp_and_clash_detection(entry_1, entry_conditions, input_ifc_file, blender_executable, open_ifc_script, listbox_clashing_elements):
     """Erstellt das Lichtraumprofil und führt Clash Detection durch."""
     print("on_create_lrp_and_clash_detection aufgerufen")
     if not input_ifc_file:
         messagebox.showwarning("Warnung", "Bitte eine Input IFC-Datei auswählen.")
         return
 
+    # LRP-Koordinaten verarbeiten
     lrp_text = entry_1.get("1.0", "end-1c")
     print(f"LRP-Koordinaten eingegeben: {lrp_text}")
     try:
@@ -44,15 +46,40 @@ def on_create_lrp_and_clash_detection(entry_1, input_ifc_file, blender_executabl
         messagebox.showerror("Fehler", f"Bitte gültige Koordinaten für das Lichtraumprofil eingeben.\n{e}")
         return
 
-    # Generiere automatisch einen Output-Dateipfad
+    # Property-Bedingungen verarbeiten
+    conditions_input = entry_conditions.get("1.0", "end-1c")
+    print(f"Property-Bedingungen eingegeben: {conditions_input}")
+    if not conditions_input.strip():
+        messagebox.showwarning("Warnung", "Bitte mindestens eine gültige Filterbedingung eingeben.")
+        return
+
+    try:
+        property_conditions = parse_property_conditions(conditions_input)
+    except ValueError as ve:
+        messagebox.showerror("Fehler", str(ve))
+        return
+
+    # Generiere Output-Dateipfad
     output_ifc_file = generate_output_file_path(input_ifc_file)
     print(f"Generierter Output IFC-Dateipfad: {output_ifc_file}")
 
     # Lichtraumprofil erstellen und Clash Detection durchführen
     try:
-        create_lrp_and_perform_clash_detection(input_ifc_file, output_ifc_file, lrp_data)
+        model, clashing_elements_info = create_lrp_and_perform_clash_detection(
+            input_ifc_file, output_ifc_file, lrp_data, property_conditions
+        )
         print(f"Lichtraumprofil erstellt und Clash Detection durchgeführt: {output_ifc_file}")
-        open_in_blender(output_ifc_file, blender_executable, open_ifc_script)  # Öffne die neue IFC-Datei in Blender
+
+        # Aktualisieren der Listbox mit den kollidierenden Elementen
+        listbox_clashing_elements.delete(0, tk.END)  # Löschen der vorherigen Einträge
+        if clashing_elements_info:
+            for info in clashing_elements_info:
+                listbox_clashing_elements.insert(tk.END, info)
+        else:
+            listbox_clashing_elements.insert(tk.END, "Keine Kollisionen gefunden.")
+
+        # Öffne die neue IFC-Datei in Blender
+        open_in_blender(output_ifc_file, blender_executable, open_ifc_script)
     except Exception as e:
         messagebox.showerror("Fehler", f"Fehler bei der Verarbeitung: {e}")
 def select_stl_file(button, var_name, zustand0_file_var, zustand1_file_var):
@@ -178,9 +205,6 @@ def apply_property_filter(ifc_file, conditions_input, colour, transparency, blen
         messagebox.showwarning("Warnung", "Bitte mindestens eine gültige Filterbedingung eingeben.")
         return
 
-    # Bedingungen in eine Liste von Strings umwandeln
-    conditions = [cond.strip() for cond in conditions_input.split('\n') if cond.strip()]
-
     try:
         colour_rgb = tuple(map(int, colour.split(',')))
         if len(colour_rgb) != 3 or not all(0 <= val <= 255 for val in colour_rgb):
@@ -197,46 +221,11 @@ def apply_property_filter(ifc_file, conditions_input, colour, transparency, blen
         return
 
     # Verarbeite die Bedingungen in eine Liste von Dictionaries
-    property_conditions = []
-    for condition_str in conditions:
-        condition_str = condition_str.strip()
-        if not condition_str:
-            continue
-        condition = {'property_set': None, 'property': None, 'value': None}
-        try:
-            # Zuerst nach '=' aufteilen, um Wert zu extrahieren
-            if '=' in condition_str:
-                lhs, value = condition_str.split('=', 1)
-                condition['value'] = value.strip()
-            else:
-                lhs = condition_str
-            lhs = lhs.strip()
-            # Jetzt prüfen, ob ein '.' vorhanden ist
-            if '.' in lhs:
-                pset_name, prop_name = lhs.split('.', 1)
-                condition['property_set'] = pset_name.strip()
-                condition['property'] = prop_name.strip()
-            else:
-                condition['property'] = lhs.strip()
-            # Typkonvertierung des Wertes hier durchführen
-            if condition['value'] is not None:
-                value_str = condition['value']
-                # Versuchen, den Wert in eine Zahl umzuwandeln
-                try:
-                    if '.' in value_str or 'e' in value_str.lower():
-                        condition['value'] = float(value_str)
-                    else:
-                        condition['value'] = int(value_str)
-                except ValueError:
-                    # Wert bleibt ein String
-                    condition['value'] = value_str.strip()
-            property_conditions.append(condition)
-        except ValueError as ve:
-            messagebox.showerror(
-                "Fehler",
-                f"Ungültiges Bedingungsformat: {condition_str}\n{ve}\nVerwenden Sie das Format 'PropertySet.Property=Value', 'PropertySet.Property', 'Property=Value' oder 'Property'."
-            )
-            return
+    try:
+        property_conditions = parse_property_conditions(conditions_input)
+    except ValueError as ve:
+        messagebox.showerror("Fehler", str(ve))
+        return
 
     try:
         # Öffne das Modell

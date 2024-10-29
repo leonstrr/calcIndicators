@@ -82,5 +82,54 @@ def compare_values(prop_value, value, epsilon=1e-5):
                 return bool_values[prop_value_str] == bool_values[value_str]
             # String-Vergleich
             return prop_value_str == value_str
+def parse_property_conditions(conditions_input):
+    """
+    Parst die Eingabe der Property-Bedingungen und gibt eine Liste von Dictionaries zurück.
+
+    :param conditions_input: String der Bedingungen (z.B. aus einem Textfeld)
+    :return: Liste von Dictionaries mit Schlüsseln 'property_set', 'property', 'value'
+    :raises ValueError: Wenn das Bedingungsformat ungültig ist
+    """
+    conditions = [cond.strip() for cond in conditions_input.strip().split('\n') if cond.strip()]
+    property_conditions = []
+    for condition_str in conditions:
+        condition = {'property_set': None, 'property': None, 'value': None}
+        try:
+            # Zuerst nach '=' aufteilen, um den Wert zu extrahieren
+            if '=' in condition_str:
+                lhs, value = condition_str.split('=', 1)
+                condition['value'] = value.strip()
+            else:
+                lhs = condition_str
+            lhs = lhs.strip()
+            # Jetzt prüfen, ob ein '.' vorhanden ist
+            if '.' in lhs:
+                pset_name, prop_name = lhs.split('.', 1)
+                condition['property_set'] = pset_name.strip()
+                condition['property'] = prop_name.strip()
+            else:
+                condition['property'] = lhs.strip()
+            # Typkonvertierung des Wertes hier durchführen
+            if condition['value'] is not None:
+                value_str = condition['value']
+                # Versuchen, den Wert in eine Zahl umzuwandeln
+                try:
+                    if '.' in value_str or 'e' in value_str.lower():
+                        condition['value'] = float(value_str)
+                    else:
+                        condition['value'] = int(value_str)
+                except ValueError:
+                    # Wert bleibt ein String (z.B. 'True', 'False', 'ABC')
+                    condition['value'] = value_str.strip()
+            # Überprüfen, ob mindestens die Property vorhanden ist
+            if not condition['property']:
+                raise ValueError("Keine gültige Property angegeben.")
+            property_conditions.append(condition)
+        except ValueError as ve:
+            raise ValueError(
+                f"Ungültiges Bedingungsformat: {condition_str}\n{ve}\n"
+                "Verwenden Sie das Format 'PropertySet.Property=Value', 'Property=Value' oder 'Property'."
+            )
+    return property_conditions
 
 

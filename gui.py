@@ -1,12 +1,11 @@
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk
 import os
 import sys
 
 from gui_modules.gui_helpers import (
     add_hover_effect,
     load_blender_icon,
-    update_transparency_entry
 )
 from gui_modules.callbacks import (
     on_open_input_in_blender,
@@ -31,7 +30,7 @@ blender_executable = "C:/Programme/Blender Foundation/Blender 4.2/blender.exe"
 
 # Pfade zu den Blender-Skripten
 open_ifc_script = os.path.join(os.path.dirname(__file__), "scripts", "open_ifc.py")
-open_stl_script = os.path.join(os.path.dirname(__file__), "scripts", "open_stl.py")  # Neuer Skriptpfad
+open_stl_script = os.path.join(os.path.dirname(__file__), "scripts", "open_stl.py")  # Neuer Pfad
 
 def main():
     """Hauptfunktion zur Erstellung der GUI."""
@@ -165,7 +164,7 @@ def main():
 
     # Button für Lichtraumprofil erstellen & Clash Detection durchführen
     frame_actions1 = tk.Frame(tab1, bg="#213563")
-    frame_actions1.place(x=150.0, y=320.0, width=900.0, height=80.0)  # Position auf y=320.0 verschoben
+    frame_actions1.place(x=150.0, y=410.0, width=900.0, height=80.0)  # Position auf y=320.0 verschoben
 
     button_combined = tk.Button(
         frame_actions1,
@@ -173,7 +172,7 @@ def main():
         borderwidth=0,
         highlightthickness=0,
         command=lambda: on_create_lrp_and_clash_detection(
-            entry_1, input_ifc_file_var.get(), blender_executable, open_ifc_script
+            entry_1, entry_conditions, input_ifc_file_var.get(), blender_executable, open_ifc_script, listbox_clashing_elements
         ),
         relief="flat",
         fg="#FFFFFF",
@@ -186,6 +185,83 @@ def main():
 
     # Hover-Effekte für das combined Button hinzufügen
     add_hover_effect(button_combined, hover_bg="#505050", normal_bg="#404040")
+
+    # Eingabefeld für Filterbedingungen
+    canvas1.create_text(
+        150.0,
+        280.0,
+        anchor="nw",
+        text="Filterbedingungen für Clash Detection:",
+        fill="#FFFFFF",
+        font=("Arial", 22)
+    )
+
+    entry_conditions = tk.Text(
+        tab1,
+        bd=0,
+        bg="#404040",
+        fg="#FFFFFF",
+        highlightthickness=0,
+        font=("Arial", 16),
+        height=4
+    )
+    entry_conditions.place(
+        x=150.0,
+        y=310.0,
+        width=900.0,
+        height=80.0
+    )
+
+    # Tag für linken und vertikalen Einzug
+    entry_conditions.tag_configure(
+         "indent",
+        lmargin1=30,  # Linker Einzug erhöht
+        lmargin2=30,  # Linker Einzug für Zeilen nach der ersten erhöht
+        spacing1=8,    # Abstand oberhalb des Absatzes reduziert
+        spacing3=8     # Abstand unterhalb des Absatzes reduziert
+    )
+    entry_conditions.tag_configure(
+        "large_font",
+        font=("Arial", 17),
+    )
+
+    entry_conditions.insert("1.0", "Pset_BeamCommon.LoadBearing=True", ("indent", "large_font"))  # Beispielwert
+
+    # Hover-Effekte für das Eingabefeld hinzufügen
+    add_hover_effect(entry_conditions, hover_bg="#505050", normal_bg="#404040")
+
+    # Label für die detaillierten Informationen der gefundenen Elemente
+    label_clashing_elements_details = tk.Label(
+        tab1,
+        text="Gefundene Elemente:",
+        bg="#213563",
+        fg="#FFFFFF",
+        font=("Arial", 18),
+        justify="left"
+    )
+    label_clashing_elements_details.place(x=150, y=550)
+
+    # Frame für Listbox und Scrollbar
+    frame_listbox = tk.Frame(tab1, bg="#213563")
+    frame_listbox.place(x=150, y=580, width=900, height=100)
+
+    # Listbox für die Anzeige der Details (ID und Name)
+    listbox_clashing_elements = tk.Listbox(
+        frame_listbox,
+        bg="#404040",
+        fg="#FFFFFF",
+        font=("Arial", 14),
+        selectmode=tk.SINGLE
+    )
+    listbox_clashing_elements.pack(side="left", fill="both", expand=True)
+
+    # Scrollbar hinzufügen
+    scrollbar = tk.Scrollbar(frame_listbox, orient='vertical', command=listbox_clashing_elements.yview)
+    listbox_clashing_elements.config(yscrollcommand=scrollbar.set)
+    scrollbar.pack(side="right", fill="y")
+
+    # Hover-Effekte für die Listbox hinzufügen (optional)
+    add_hover_effect(listbox_clashing_elements, hover_bg="#505050", normal_bg="#404040")
 
     # --- Text und Eingabefeld für LRP-Koordinaten --- #
     # Koordinaten Label
@@ -226,7 +302,7 @@ def main():
         font=("Arial", 17),
     )
     # Standardwert für die Koordinaten mit Einzug
-    entry_1.insert("1.0", "[(-14.5, 0.0), (14.5, 0.0), (14.5, 7.5), (-14.5, 7.5)]", ("indent", "large_font"))
+    entry_1.insert("1.0","[(-14.5, 0.0), (14.5, 0.0), (14.5, 7.5), (-14.5, 7.5)]", ("indent", "large_font"))
 
     # Hover-Effekte für das Eingabefeld hinzufügen
     add_hover_effect(entry_1, hover_bg="#505050", normal_bg="#404040")
@@ -247,7 +323,7 @@ def main():
         150.0,
         50.0,
         anchor="nw",
-        text="Bodenaushub Berechnungen",
+        text="Berechnung des Bodenaushubs",
         fill="#FFFFFF",
         font=("Arial", 28, "bold")
     )
@@ -340,7 +416,7 @@ def main():
     )
     entry_cell_size.grid(row=0, column=1, padx=10, pady=10, sticky='w')
 
-    # Hover-Effekte für das Rastergröße Eingabefeld hinzufügen
+    # Hover-Effekte für das Eingabefeld der Rastergröße hinzufügen
     add_hover_effect(entry_cell_size, hover_bg="#505050", normal_bg="#404040")
 
     # Eingabefeld für Depot-Distanz (depot_distance)
@@ -363,7 +439,7 @@ def main():
     )
     entry_depot_distance.grid(row=1, column=1, padx=10, pady=10, sticky='w')
 
-    # Hover-Effekte für das Depot-Distanz Eingabefeld hinzufügen
+    # Hover-Effekte für das "Depot-Distanz" Eingabefeld hinzufügen
     add_hover_effect(entry_depot_distance, hover_bg="#505050", normal_bg="#404040")
 
     # Button zum Starten der Bodenaushub-Berechnung
@@ -392,7 +468,7 @@ def main():
     )
     button_start_berechnung.pack(side="left", fill="both", expand=True, padx=(0, 0), pady=10)
 
-    # Hover-Effekte für das Start-Berechnung Button hinzufügen
+    # Hover-Effekte für den "Start-Berechnung" Button hinzufügen
     add_hover_effect(button_start_berechnung, hover_bg="#505050", normal_bg="#404040")
 
     # Label zur Anzeige der minimalen Arbeit
@@ -431,7 +507,7 @@ def main():
         150.0,
         50.0,
         anchor="nw",
-        text="Filter nach Properties",
+        text="Property (-set) Filter",
         fill="#FFFFFF",
         font=("Arial", 28, "bold")
     )
@@ -499,10 +575,10 @@ def main():
     # Label für Filterbedingungen
     label_conditions = tk.Label(
         frame_conditions,
-        text="Filterbedingungen (Format: PropertySet.Property=Value):",
+        text="Filterbedingungen:",
         bg="#213563",
         fg="#FFFFFF",
-        font=("Arial", 18),
+        font=("Arial", 22),
         anchor='w',
         justify='left'
     )
@@ -517,8 +593,22 @@ def main():
         height=4,  # Anzahl der sichtbaren Zeilen
         bd=0
     )
+
+    # Tag für linken und vertikalen Einzug
+    text_conditions.tag_configure(
+         "indent",
+        lmargin1=30,  # Linker Einzug erhöht
+        lmargin2=30,  # Linker Einzug für Zeilen nach der ersten erhöht
+        spacing1=8,    # Abstand oberhalb des Absatzes reduziert
+        spacing3=0     # Abstand unterhalb des Absatzes reduziert
+    )
+    text_conditions.tag_configure(
+        "large_font",
+        font=("Arial", 17),
+    )
+
     text_conditions.pack(fill='both', expand=True, anchor='w')
-    text_conditions.insert(1.0, "ConcreteCover=0.06\nPset_ConcreteElementGeneral.CastingMethod=INSITU")
+    text_conditions.insert(1.0, "ConcreteCover=0.06\nPset_ConcreteElementGeneral.CastingMethod=INSITU", ("indent", "large_font"))  # Beispielwert
 
     # Hover-Effekte für das Textfeld hinzufügen
     add_hover_effect(text_conditions, hover_bg="#505050", normal_bg="#404040")
