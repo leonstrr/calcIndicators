@@ -204,14 +204,14 @@ def solve_unbalanced_transport_problem(excess_points_df, deficit_points_df, dist
     # **Nebenbedingungen für Überschusspunkte**
     for i in range(num_excess):
         prob += (
-            pulp.lpSum([transport_vars[i, j] for j in range(num_deficit)]) + to_depot <= excess_points_df.iloc[i]['volumen_diff'],
+            pulp.lpSum([transport_vars[i, j] for j in range(num_deficit)]) + to_depot == excess_points_df.iloc[i]['volumen_diff'],
             f"ExcessSupply_{i}"
         )
 
     # **Nebenbedingungen für Defizitpunkte**
     for j in range(num_deficit):
         prob += (
-            pulp.lpSum([transport_vars[i, j] for i in range(num_excess)]) + from_depot >= -deficit_points_df.iloc[j]['volumen_diff'],
+            pulp.lpSum([transport_vars[i, j] for i in range(num_excess)]) + from_depot == -deficit_points_df.iloc[j]['volumen_diff'],
             f"DeficitDemand_{j}"
         )
 
@@ -480,7 +480,7 @@ def show_plot_in_new_window(fig, window_title):
 
     new_window.geometry("1200x800")
 
-# --- Funktion zum Export des Transport-Planns --- #
+# --- Funktion zum Export des Transport-Plans --- #
 def export_transport_plan_to_csv(transport_plan, excess_points_df, deficit_points_df, to_depot_value, from_depot_value, depot_distance, filename='transport_plan.csv'):
     """
     Exportiert den Transportplan als CSV-Datei, inklusive Transport zur/von der Deponie.
@@ -540,8 +540,6 @@ def export_transport_plan_to_csv(transport_plan, excess_points_df, deficit_point
     transport_df = pd.DataFrame(data)
     transport_df.to_csv(filename, index=False)
     print(f"Transportplan wurde als '{filename}' gespeichert.")
-
-
 def perform_bodenaushub(zustand0_file, zustand1_file, depot_distance, cell_size):
 
     # 1. Lade Netze
