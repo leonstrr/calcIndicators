@@ -106,7 +106,7 @@ def open_specific_stl_in_blender(stl_file_var, blender_executable, open_stl_scri
         messagebox.showwarning("Warnung", "Bitte zuerst eine STL-Datei auswählen.")
         return
     open_stl_in_blender([stl_file], blender_executable, open_stl_script)
-def start_bodenaushub(zustand0_file_var,zustand1_file_var,cell_size_var,depot_distance_var,label_volume,label_work):
+def start_bodenaushub(zustand0_file_var, zustand1_file_var, cell_size_var, depot_distance_var, label_volume, label_work):
     """
     Startet die Bodenaushub-Berechnung und aktualisiert die GUI entsprechend.
 
@@ -139,21 +139,28 @@ def start_bodenaushub(zustand0_file_var,zustand1_file_var,cell_size_var,depot_di
         total_excess = results['total_excess']
         total_deficit = results['total_deficit']
         total_difference = total_excess - total_deficit
-        total_difference_message = abs(total_excess-total_deficit)
+        total_difference_message = abs(total_difference)
         min_work = results['total_costs']
         min_work_external = results['depot_costs']
 
+        # Depot-Transportwert ermitteln
+        depot_transport_value = results['depot_transport_value']
+
         # Nachricht basierend auf dem Vorzeichen der Differenz erstellen
         if total_difference > 0:
-            depot_message = f"zur"
+            depot_message = f"zur Deponie"
+        elif total_difference < 0:
+            depot_message = f"von der Deponie"
         else:
-            depot_message = f"von der"
+            depot_message = f"Die Deponie wird nicht genutzt."
 
         # Label neu beschriften
         label_volume.config(
-            text=f"Überschüsse: {total_excess:.2f} m³, Defizite: {total_deficit:.2f} m³, Differenz gesamt: {total_difference:.2f} m³, Insgesamt {total_difference_message:.2f} m³ {depot_message} Deponie.")
+            text=f"Überschüsse: {total_excess:.2f} m³, Defizite: {total_deficit:.2f} m³, Differenz gesamt: {total_difference:.2f} m³."
+        )
         label_work.config(
-            text=f"Minimale Arbeit (gesamt): {min_work:.2f} m³·m, davon {min_work_external:.2f} m³·m {depot_message} Deponie")
+            text=f"Minimale Arbeit (gesamt): {min_work:.2f} m³·m, davon {min_work_external:.2f} m³·m {depot_message}"
+        )
 
         # Verzeichnis der STL-Dateien ermitteln
         stl_directory = os.path.dirname(zustand0_file)
@@ -161,13 +168,24 @@ def start_bodenaushub(zustand0_file_var,zustand1_file_var,cell_size_var,depot_di
         # Dateiname für die CSV-Datei festlegen
         csv_filename = os.path.join(stl_directory, 'transport_plan.csv')
 
+        # Bestimmen von to_depot_value und from_depot_value
+        if total_difference > 0:
+            to_depot_value = depot_transport_value
+            from_depot_value = 0
+        elif total_difference < 0:
+            to_depot_value = 0
+            from_depot_value = depot_transport_value
+        else:
+            to_depot_value = 0
+            from_depot_value = 0
+
         # Transportplan als CSV exportieren
         export_transport_plan_to_csv(
             results['transport_plan'],
             results['excess_points'],
             results['deficit_points'],
-            results['to_depot_value'],
-            results['from_depot_value'],
+            results['depot_transport_value'],
+            results['total_difference'],
             depot_distance,
             filename=csv_filename
         )
@@ -182,6 +200,7 @@ def start_bodenaushub(zustand0_file_var,zustand1_file_var,cell_size_var,depot_di
 
     except Exception as e:
         messagebox.showerror("Fehler", f"Bei der Berechnung ist ein Fehler aufgetreten:\n{e}")
+
 def apply_property_filter(ifc_file, conditions_input, colour, transparency, blender_executable, open_ifc_script):
     """
     Führt den Property-Filter durch, färbt die passenden Elemente ein und öffnet das Ergebnis in Blender.

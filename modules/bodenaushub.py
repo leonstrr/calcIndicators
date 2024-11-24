@@ -161,20 +161,24 @@ def calculate_distance_matrix(point_df):
     distance_matrix = cdist(excess_points, deficit_points, metric='euclidean')
 
     return distance_matrix, excess_df, deficit_df
+
+
 def solve_unbalanced_transport_problem(excess_points_df, deficit_points_df, distance_matrix, depot_distance):
     """
-    Löst ein unbalanciertes Transportproblem mit PuLP, wobei die Deponie nur als Gesamttransportpunkt genutzt wird.
+    Löst ein unbalanciertes Transportproblem mit PuLP, wobei die Deponie den Gesamtüberschuss oder -defizit ausgleicht.
+    Es wird nur eine Depotvariable verwendet, die den gesamten Transport zur/von der Deponie repräsentiert.
 
     :param excess_points_df: Pandas DataFrame mit Überschusspunkten (x, y, volumen_diff).
     :param deficit_points_df: Pandas DataFrame mit Defizitpunkten (x, y, volumen_diff).
     :param distance_matrix: Distanzmatrix zwischen Überschusspunkten und Defizitpunkten.
     :param depot_distance: Distanz zur Deponie (z.B. 50 km).
-    :return: Transportplan, Transport zur/von der Deponie, interne Kosten, Depotkosten, LP Problem
+    :return: transport_plan, depot_transport_value, total_supply, total_demand, total_difference, depot_costs, internal_costs, total_costs, prob
     """
-    # Berechnung der Summen für Überschuss und Defizit
-    total_excess = excess_points_df['volumen_diff'].sum()
-    total_deficit = -deficit_points_df['volumen_diff'].sum()
-    total_difference = total_excess + total_deficit
+
+    # Berechnung der Summen für Angebot und Nachfrage
+    total_supply = excess_points_df['volumen_diff'].sum()
+    total_demand = -deficit_points_df['volumen_diff'].sum()
+    total_difference = total_supply - total_demand  # Positiv bei Gesamtüberschuss, negativ bei Gesamtdefizit
 
     # Initialisierung des LP-Problems
     prob = pulp.LpProblem("Unbalanced_Transport_Problem", pulp.LpMinimize)
@@ -190,34 +194,67 @@ def solve_unbalanced_transport_problem(excess_points_df, deficit_points_df, dist
         lowBound=0, cat='Continuous'
     )
 
-    # Variablen für Gesamtmengen zur/von Deponie
-    to_depot = pulp.LpVariable("ToDepot", lowBound=0, cat='Continuous')
-    from_depot = pulp.LpVariable("FromDepot", lowBound=0, cat='Continuous')
+    # Variable für den Gesamttransport zur/von der Deponie
+    depot_transport = pulp.LpVariable("DepotTransport", lowBound=0, cat='Continuous')
 
     # **Zielfunktion:** Minimierung der Transportkosten
     prob += (
         pulp.lpSum([transport_vars[i, j] * distance_matrix[i, j]
-                    for i in range(num_excess) for j in range(num_deficit)]) +
-        to_depot * depot_distance + from_depot * depot_distance
+                    for i in range(num_excess) for j in range(num_deficit)])
+        + depot_transport * depot_distance
     ), "Total_Transport_Cost"
 
     # **Nebenbedingungen für Überschusspunkte**
     for i in range(num_excess):
         prob += (
-            pulp.lpSum([transport_vars[i, j] for j in range(num_deficit)]) + to_depot == excess_points_df.iloc[i]['volumen_diff'],
-            f"ExcessSupply_{i}"
+            pulp.lpSum([transport_vars[i, j] for j in range(num_deficit)])
+            <= excess_points_df.iloc[i]['volumen_diff'],
+            f"Supply_Constraint_{i}"
         )
 
     # **Nebenbedingungen für Defizitpunkte**
     for j in range(num_deficit):
         prob += (
-            pulp.lpSum([transport_vars[i, j] for i in range(num_excess)]) + from_depot == -deficit_points_df.iloc[j]['volumen_diff'],
-            f"DeficitDemand_{j}"
+            pulp.lpSum([transport_vars[i, j] for i in range(num_excess)])
+            >= -deficit_points_df.iloc[j]['volumen_diff'],
+            f"Demand_Constraint_{j}"
         )
 
-    # **Deponie-Balancing-Bedingungen:** nur wenn Überschuss oder Defizit bleibt
-    prob += to_depot <= max(0, total_excess - total_deficit), "DepotSupplyCondition"
-    prob += from_depot <= max(0, total_deficit - total_excess), "DepotDemandCondition"
+    # **Gesamtbilanzbedingung mit Deponie**
+    if total_difference > 0:
+        # Gesamtüberschuss: Überschuss geht zur Deponie
+        prob += (
+            pulp.lpSum([transport_vars[i, j] for i in range(num_excess) for j in range(num_deficit)])
+            + depot_transport == total_supply,
+            "Total_Supply_Constraint"
+        )
+        prob += (
+            pulp.lpSum([transport_vars[i, j] for i in range(num_excess) for j in range(num_deficit)])
+            == total_demand,
+            "Total_Demand_Constraint"
+        )
+        prob += depot_transport == total_difference, "Depot_Inflow"
+    elif total_difference < 0:
+        # Gesamtdefizit: Deponie liefert fehlende Menge
+        prob += (
+            pulp.lpSum([transport_vars[i, j] for i in range(num_excess) for j in range(num_deficit)])
+            == total_supply,
+            "Total_Supply_Constraint"
+        )
+        prob += (
+            pulp.lpSum([transport_vars[i, j] for i in range(num_excess) for j in range(num_deficit)])
+            + depot_transport == total_demand,
+            "Total_Demand_Constraint"
+        )
+        prob += depot_transport == -total_difference, "Depot_Outflow"
+    else:
+        # Kein Überschuss oder Defizit: Deponie wird nicht genutzt
+        prob += (
+            pulp.lpSum([transport_vars[i, j] for i in range(num_excess) for j in range(num_deficit)])
+            == total_supply,
+            "Total_Supply_Demand_Constraint"
+        )
+        prob += depot_transport == 0, "No_Depot_Transport"
 
     # **Lösen des Problems**
     prob.solve()
@@ -228,19 +265,20 @@ def solve_unbalanced_transport_problem(excess_points_df, deficit_points_df, dist
         for j in range(num_deficit):
             transport_plan[i, j] = pulp.value(transport_vars[i, j])
 
-    # **Debugging-Ausgaben** zur Kostenverifizierung
-    to_depot_value = pulp.value(to_depot)
-    from_depot_value = pulp.value(from_depot)
-    depot_costs = to_depot_value * depot_distance + from_depot_value * depot_distance
+    # **Auswertung der Ergebnisse**
+    depot_transport_value = pulp.value(depot_transport)
+    depot_costs = depot_transport_value * depot_distance
     internal_costs = pulp.value(prob.objective) - depot_costs
     total_costs = pulp.value(prob.objective)
 
     print(f"Gesamtkosten der Zielfunktion: {total_costs:.2f}")
-    print(f"Kosten für Transport zur Deponie: {to_depot_value * depot_distance:.2f}")
-    print(f"Kosten für Transport von der Deponie: {from_depot_value * depot_distance:.2f}")
+    print(f"Transport zur/von der Deponie: {depot_transport_value:.2f}")
+    print(f"Kosten für Transport zur/von der Deponie: {depot_costs:.2f}")
     print(f"Berechnete interne Transportkosten: {internal_costs:.2f}")
 
-    return transport_plan, to_depot_value, from_depot_value, total_excess,total_deficit, total_difference, depot_costs, internal_costs, total_costs, prob
+    return transport_plan, depot_transport_value, total_supply, total_demand, total_difference, depot_costs, internal_costs, total_costs, prob
+
+
 
 # --- Grundfunktionen zur Visualisierung --- #
 def visualize_interpolated_points(point_df):
@@ -481,15 +519,15 @@ def show_plot_in_new_window(fig, window_title):
     new_window.geometry("1200x800")
 
 # --- Funktion zum Export des Transport-Plans --- #
-def export_transport_plan_to_csv(transport_plan, excess_points_df, deficit_points_df, to_depot_value, from_depot_value, depot_distance, filename='transport_plan.csv'):
+def export_transport_plan_to_csv(transport_plan, excess_points_df, deficit_points_df, depot_transport_value, total_difference, depot_distance, filename='transport_plan.csv'):
     """
     Exportiert den Transportplan als CSV-Datei, inklusive Transport zur/von der Deponie.
 
     :param transport_plan: NumPy-Array mit den Transportmengen von Überschusspunkten zu Defizitpunkten.
     :param excess_points_df: DataFrame mit den Überschusspunkten (x, y, volumen_diff).
     :param deficit_points_df: DataFrame mit den Defizitpunkten (x, y, volumen_diff).
-    :param to_depot_value: Gesamtmenge, die zur Deponie transportiert wird.
-    :param from_depot_value: Gesamtmenge, die von der Deponie abgeholt wird.
+    :param depot_transport_value: Gesamtmenge, die zur/von der Deponie transportiert wird.
+    :param total_difference: Differenz zwischen Gesamtangebot und Gesamtnachfrage.
     :param depot_distance: Distanz zur Deponie.
     :param filename: Name der Ausgabedatei.
     """
@@ -513,7 +551,8 @@ def export_transport_plan_to_csv(transport_plan, excess_points_df, deficit_point
                     'from_depot': 0
                 })
     # Hinzufügen des Transports zur/von der Deponie
-    if to_depot_value > 0:
+    if total_difference > 0 and depot_transport_value > 0:
+        # Transport zur Deponie
         data.append({
             'source_x': 'Various',
             'source_y': 'Various',
@@ -521,11 +560,12 @@ def export_transport_plan_to_csv(transport_plan, excess_points_df, deficit_point
             'destination_x': 'Depot',
             'destination_y': 'Depot',
             'destination_volumen_diff': 'N/A',
-            'amount': to_depot_value,
+            'amount': depot_transport_value,
             'to_depot': 1,
             'from_depot': 0
         })
-    if from_depot_value > 0:
+    elif total_difference < 0 and depot_transport_value > 0:
+        # Transport von der Deponie
         data.append({
             'source_x': 'Depot',
             'source_y': 'Depot',
@@ -533,15 +573,19 @@ def export_transport_plan_to_csv(transport_plan, excess_points_df, deficit_point
             'destination_x': 'Various',
             'destination_y': 'Various',
             'destination_volumen_diff': 'Various',
-            'amount': from_depot_value,
+            'amount': depot_transport_value,
             'to_depot': 0,
             'from_depot': 1
         })
+    else:
+        # Deponie wird nicht genutzt
+        pass
+
     transport_df = pd.DataFrame(data)
     transport_df.to_csv(filename, index=False)
     print(f"Transportplan wurde als '{filename}' gespeichert.")
-def perform_bodenaushub(zustand0_file, zustand1_file, depot_distance, cell_size):
 
+def perform_bodenaushub(zustand0_file, zustand1_file, depot_distance, cell_size):
     # 1. Lade Netze
     triangles_set = load_stl_files(zustand0_file, zustand1_file)
 
@@ -561,7 +605,20 @@ def perform_bodenaushub(zustand0_file, zustand1_file, depot_distance, cell_size)
     distance_matrix, excess_points, deficit_points = calculate_distance_matrix(point_df)
 
     # 7. Löse das Transportproblem
-    transport_plan, to_depot_value, from_depot_value, total_excess, total_deficit, total_difference, depot_costs, internal_costs, total_costs, prob = solve_unbalanced_transport_problem(excess_points, deficit_points, distance_matrix, depot_distance)
+    transport_plan, depot_transport_value, total_excess, total_deficit, total_difference, depot_costs, internal_costs, total_costs, prob = solve_unbalanced_transport_problem(
+        excess_points, deficit_points, distance_matrix, depot_distance
+    )
+
+    # Bestimmen von to_depot_value und from_depot_value
+    if total_difference > 0:
+        to_depot_value = depot_transport_value
+        from_depot_value = 0
+    elif total_difference < 0:
+        to_depot_value = 0
+        from_depot_value = depot_transport_value
+    else:
+        to_depot_value = 0
+        from_depot_value = 0
 
     return {
         'bounding_box': bounding_box,
@@ -571,6 +628,7 @@ def perform_bodenaushub(zustand0_file, zustand1_file, depot_distance, cell_size)
         'transport_plan': transport_plan,
         'excess_points': excess_points,
         'deficit_points': deficit_points,
+        'depot_transport_value': depot_transport_value,
         'to_depot_value': to_depot_value,
         'from_depot_value': from_depot_value,
         'total_excess': total_excess,
@@ -581,4 +639,5 @@ def perform_bodenaushub(zustand0_file, zustand1_file, depot_distance, cell_size)
         'total_costs': total_costs,
         'prob': prob
     }
+
 
